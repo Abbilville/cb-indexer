@@ -1,0 +1,36 @@
+# Binaries and build artifacts
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+
+# IDE and Editor Files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs and runtime caches
+logs/
+*.log
+.oss-indexer/
+.codebase-memory/
+.cache/
+
+# Environment Files
+.env
+.env.local
+.env.*.local
+
+# Go workspace file
+go.work
+go.work.sum
