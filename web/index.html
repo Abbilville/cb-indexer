@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>oss-indexer — Microservice Architecture & Ingestion Hub</title>
+  <meta name="description"
+    content="Control plane & AST knowledge graph topology dashboard for microservices and multi-repo architectures." />
+
+  <!-- Modern Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700&display=swap"
+    rel="stylesheet">
+
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+
+<body>
+
+  <!-- Top Navbar -->
+  <header>
+    <div class="brand">
+      <div class="brand-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path
+            d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z">
+          </path>
+          <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+          <line x1="12" y1="22.08" x2="12" y2="12"></line>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <h1 style="font-family: 'Outfit', sans-serif;">oss-indexer</h1>
+        <p id="header-subtitle">Multi-Repo Topology & Ingestion Hub</p>
+      </div>
+    </div>
+
+    <div class="header-controls">
+      <!-- Project Selector -->
+      <div class="select-wrapper">
+        <select id="project-selector" aria-label="Select Project">
+          <option value="">Loading projects...</option>
+        </select>
+        <span class="select-arrow">▼</span>
+      </div>
+
+      <!-- Auth Key Modal Trigger -->
+      <button class="btn btn-secondary btn-icon" id="btn-open-auth" title="Configure API Auth Token">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 2l-2 2m-1.5 1.5L14 9l-3-3L2 15l4 4 9-9 3.5-3.5M21 2l-2 2"></path>
+          <circle cx="7.5" cy="16.5" r="2.5"></circle>
+        </svg>
+        <span id="auth-status-label" style="font-size:0.75rem; color:var(--text-muted); margin-left:4px;">Auth</span>
+      </button>
+
+      <!-- Refresh Button -->
+      <button class="btn btn-secondary" id="btn-refresh" title="Refresh Dashboard Data">
+        <svg id="refresh-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 4 23 10 17 10"></polyline>
+          <polyline points="1 20 1 14 7 14"></polyline>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+        </svg>
+        <span style="margin-left:4px;">Refresh</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Hero Statistics Bar -->
+  <section class="hero-stats">
+    <div class="stat-card">
+      <div class="stat-icon icon-blue">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+        </svg>
+      </div>
+      <div class="stat-info">
+        <div class="stat-label">Active Projects</div>
+        <div class="stat-value" id="stat-projects">-</div>
+      </div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-icon icon-purple">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+          <polyline points="2 17 12 22 22 17"></polyline>
+          <polyline points="2 12 12 17 22 12"></polyline>
+        </svg>
+      </div>
+      <div class="stat-info">
+        <div class="stat-label">Repositories</div>
+        <div class="stat-value" id="stat-repos">-</div>
+      </div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-icon icon-emerald">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
+          <rect x="9" y="9" width="6" height="6"></rect>
+          <line x1="9" y1="1" x2="9" y2="4"></line>
+          <line x1="15" y1="1" x2="15" y2="4"></line>
+          <line x1="9" y1="20" x2="9" y2="23"></line>
+          <line x1="15" y1="20" x2="15" y2="23"></line>
+          <line x1="20" y1="9" x2="23" y2="9"></line>
+          <line x1="20" y1="14" x2="23" y2="14"></line>
+          <line x1="1" y1="9" x2="4" y2="9"></line>
+          <line x1="1" y1="14" x2="4" y2="14"></line>
+        </svg>
+      </div>
+      <div class="stat-info">
+        <div class="stat-label">Indexed AST Nodes</div>
+        <div class="stat-value" id="stat-nodes">-</div>
+      </div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-icon icon-amber">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+        </svg>
+      </div>
+      <div class="stat-info">
+        <div class="stat-label">Daemon Health</div>
+        <div class="stat-value" id="stat-daemon">
+          <span style="display:inline-flex; align-items:center; gap:6px; font-size:1rem;">
+            <span class="pulse-dot pulse-green"></span> Active
+          </span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Main Content Layout -->
+  <main>
+    <!-- Left Column: Visual Graph + Service Catalog -->
+    <div style="display:flex; flex-direction:column; gap:1.25rem;">
+
+      <!-- Interactive Topology Map -->
+      <section class="section-box">
+        <div class="section-header">
+          <div class="section-title">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon>
+              <line x1="8" y1="2" x2="8" y2="18"></line>
+              <line x1="16" y1="6" x2="16" y2="22"></line>
+            </svg>
+            <span style="margin-left:6px;">Service Topology Map</span>
+          </div>
+          <div style="display:flex; gap:0.5rem; align-items:center;">
+            <span id="topology-summary" style="font-size:0.75rem; color:var(--text-dim);">Rendering...</span>
+          </div>
+        </div>
+
+        <div class="graph-container">
+          <svg id="topology-svg"></svg>
+
+          <div class="graph-controls">
+            <button class="btn btn-secondary btn-icon" id="btn-zoom-in" title="Zoom In"
+              style="padding:2px 8px; font-size:0.8rem;">+</button>
+            <span class="zoom-indicator" id="zoom-value">100%</span>
+            <button class="btn btn-secondary btn-icon" id="btn-zoom-out" title="Zoom Out"
+              style="padding:2px 8px; font-size:0.8rem;">−</button>
+            <button class="btn btn-secondary btn-icon" id="btn-zoom-reset" title="Reset View"
+              style="padding:2px 8px; font-size:0.7rem;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                <path d="M3 3v5h5"></path>
+              </svg>
+            </button>
+          </div>
+
+          <div class="graph-legend">
+            <div class="legend-item"><span class="legend-dot" style="background:#10b981;"></span> Indexed AST</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#3b82f6;"></span> Unindexed</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#60a5fa;"></span> Gateway Route</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#a855f7;"></span> Discovery Reg</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#06b6d4;"></span> API Call</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Service Catalog Grid -->
+      <section class="section-box">
+        <div class="services-header">
+          <div class="section-title">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+              <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+              <line x1="6" y1="6" x2="6.01" y2="6"></line>
+              <line x1="6" y1="18" x2="6.01" y2="18"></line>
+            </svg>
+            <span style="margin-left:6px;">Service & Repository Catalog</span>
+          </div>
+          <div class="search-box">
+            <span class="search-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+            </span>
+            <input type="text" class="search-input" id="search-services"
+              placeholder="Filter by name, tech, or port..." />
+          </div>
+        </div>
+
+        <div class="services-grid" id="services-container">
+          <!-- Populated by JavaScript -->
+          <div style="grid-column:1/-1; text-align:center; padding:2rem; color:var(--text-dim);">
+            Loading services...
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- Right Column: Sidebar (Action Center + Daemon Logs) -->
+    <aside class="sidebar">
+
+      <!-- Action Center -->
+      <section class="section-box">
+        <div class="section-header">
+          <div class="section-title">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+            <span style="margin-left:6px;">Action Center</span>
+          </div>
+        </div>
+        <div class="action-list">
+          <button class="btn btn-primary action-btn" id="btn-reindex-all">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+            <span>Batch Re-index Project</span>
+          </button>
+          <button class="btn btn-secondary action-btn" id="btn-pull-reindex">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+            </svg>
+            <span>Git Pull & Sync All</span>
+          </button>
+          <button class="btn btn-secondary action-btn" id="btn-open-scan">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <span>Scan New Workspace</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Background Daemon Logs -->
+      <section class="section-box" style="flex:1;">
+        <div class="section-header">
+          <div class="section-title">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+            <span style="margin-left:6px;">Ingestion & Daemon Activity</span>
+          </div>
+        </div>
+        <div class="timeline" id="timeline-container">
+          <!-- Populated by JavaScript -->
+          <div style="color:var(--text-dim); text-align:center; padding:1.5rem 0; font-size:0.8rem;">
+            No recent activity recorded
+          </div>
+        </div>
+      </section>
+
+    </aside>
+  </main>
+
+  <!-- Scan Workspace Modal -->
+  <div class="modal-backdrop" id="modal-scan">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="section-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <span style="margin-left:6px;">Scan & Register Workspace</span>
+        </div>
+        <button class="btn btn-secondary btn-icon" id="btn-close-scan" style="border:none;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="scan-path">Workspace Directory Path (Local / Server)</label>
+          <input type="text" id="scan-path" class="form-input" placeholder="e.g. /path/to/microservices or ."
+            value="." />
+        </div>
+        <div class="form-group">
+          <label for="scan-project-id">Project ID (Optional)</label>
+          <input type="text" id="scan-project-id" class="form-input" placeholder="e.g. ecommerce-core" />
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:1.25rem;">
+          <button class="btn btn-secondary" id="btn-cancel-scan">Cancel</button>
+          <button class="btn btn-primary" id="btn-submit-scan">Start Scan</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- API Key / Auth Modal -->
+  <div class="modal-backdrop" id="modal-auth">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="section-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 2l-2 2m-1.5 1.5L14 9l-3-3L2 15l4 4 9-9 3.5-3.5M21 2l-2 2"></path>
+            <circle cx="7.5" cy="16.5" r="2.5"></circle>
+          </svg>
+          <span style="margin-left:6px;">API Auth Token Configuration</span>
+        </div>
+        <button class="btn btn-secondary btn-icon" id="btn-close-auth" style="border:none;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:1rem;">
+          If <code>OSS_INDEXER_AUTH_TOKEN</code> is enabled on the server, enter the secret token below to authenticate
+          dashboard requests.
+        </p>
+        <div class="form-group">
+          <label for="auth-token-input">Secret Auth Token</label>
+          <input type="password" id="auth-token-input" class="form-input" placeholder="Enter Bearer token..." />
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:1.25rem;">
+          <button class="btn btn-secondary" id="btn-clear-auth" style="font-size:0.75rem;">Clear Token</button>
+          <div style="display:flex; gap:0.5rem;">
+            <button class="btn btn-secondary" id="btn-cancel-auth">Cancel</button>
+            <button class="btn btn-primary" id="btn-save-auth">Save & Apply</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Service Detail & AST Inspector Modal -->
+  <div class="modal-backdrop" id="modal-service">
+    <div class="modal-box" style="max-width:560px;">
+      <div class="modal-header">
+        <div class="section-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+            <polyline points="2 17 12 22 22 17"></polyline>
+            <polyline points="2 12 12 17 22 12"></polyline>
+          </svg>
+          <span id="modal-service-title" style="margin-left:6px; font-weight:700;">Service Details</span>
+        </div>
+        <button class="btn btn-secondary btn-icon" id="btn-close-service" style="border:none;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body" id="modal-service-body">
+        <!-- Populated dynamically by JavaScript -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Application Logic -->
+  <script src="/app.js"></script>
+</body>
+
+</html>
