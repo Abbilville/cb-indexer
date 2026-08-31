@@ -22,9 +22,9 @@ RUN apk add --no-cache git bash ca-certificates \
 
 COPY --from=builder /app/bin/oss-indexer /usr/local/bin/oss-indexer
 
-ENV PORT=8080
+ENV PORT=43770
 ENV OSS_INDEXER_AUTH_TOKEN=""
 
-EXPOSE 8080
+EXPOSE 43770
 
-ENTRYPOINT ["oss-indexer", "daemon", "--port", "8080"]
+ENTRYPOINT ["oss-indexer", "daemon", "--port", "43770"]
