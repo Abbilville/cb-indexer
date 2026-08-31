@@ -242,7 +242,102 @@ func scanGoDir(repoDir string) *scannedRepoData {
 	}
 }
 
-// ScanWorkspace inspects targetDir for repositories, frameworks, ports, and inter-service relationships.
+func scanRustDir(repoDir string) *scannedRepoData {
+	cargo := filepath.Join(repoDir, "Cargo.toml")
+	if _, err := os.Stat(cargo); err == nil {
+		return &scannedRepoData{
+			Name:       filepath.Base(repoDir),
+			TechStack:  []string{"Rust"},
+			EntryPoint: "src/main.rs",
+		}
+	}
+	return nil
+}
+
+func scanPhpDir(repoDir string) *scannedRepoData {
+	composer := filepath.Join(repoDir, "composer.json")
+	if _, err := os.Stat(composer); err == nil {
+		return &scannedRepoData{
+			Name:       filepath.Base(repoDir),
+			TechStack:  []string{"PHP"},
+			EntryPoint: "index.php",
+		}
+	}
+	return nil
+}
+
+func scanDotNetDir(repoDir string) *scannedRepoData {
+	entries, err := os.ReadDir(repoDir)
+	if err != nil {
+		return nil
+	}
+	for _, e := range entries {
+		if !e.IsDir() && (strings.HasSuffix(e.Name(), ".csproj") || strings.HasSuffix(e.Name(), ".fsproj") || strings.HasSuffix(e.Name(), ".sln")) {
+			return &scannedRepoData{
+				Name:       filepath.Base(repoDir),
+				TechStack:  []string{".NET", "C#"},
+				EntryPoint: "Program.cs",
+			}
+		}
+	}
+	return nil
+}
+
+func scanDockerDir(repoDir string) *scannedRepoData {
+	dockerfile := filepath.Join(repoDir, "Dockerfile")
+	compose := filepath.Join(repoDir, "docker-compose.yml")
+	if _, err := os.Stat(dockerfile); err == nil {
+		return &scannedRepoData{
+			Name:       filepath.Base(repoDir),
+			TechStack:  []string{"Docker"},
+			EntryPoint: "Dockerfile",
+		}
+	}
+	if _, err := os.Stat(compose); err == nil {
+		return &scannedRepoData{
+			Name:       filepath.Base(repoDir),
+			TechStack:  []string{"Docker Compose"},
+			EntryPoint: "docker-compose.yml",
+		}
+	}
+	return nil
+}
+
+func scanGitDir(repoDir string) *scannedRepoData {
+	gitDir := filepath.Join(repoDir, ".git")
+	if stat, err := os.Stat(gitDir); err == nil && stat.IsDir() {
+		return &scannedRepoData{
+			Name:       filepath.Base(repoDir),
+			TechStack:  []string{"Git Repo"},
+			EntryPoint: "",
+		}
+	}
+	return nil
+}
+
+var repoMatchers = []func(string) *scannedRepoData{
+	scanPackageJSON,
+	scanGoDir,
+	scanJavaDir,
+	scanPythonDir,
+	scanRustDir,
+	scanDotNetDir,
+	scanPhpDir,
+	scanDockerDir,
+	scanGitDir,
+}
+
+// matchRepo attempts to match any supported technology stack in target directory.
+func matchRepo(dir string) *scannedRepoData {
+	for _, fn := range repoMatchers {
+		if m := fn(dir); m != nil {
+			return m
+		}
+	}
+	return nil
+}
+
+// ScanWorkspace inspects targetDir recursively for repositories, frameworks, ports, and inter-service relationships.
 func ScanWorkspace(targetDir string, projectID string) (*registry.ProjectRegistry, error) {
 	absDir, err := filepath.Abs(targetDir)
 	if err != nil {
@@ -255,63 +350,60 @@ func ScanWorkspace(targetDir string, projectID string) (*registry.ProjectRegistr
 	}
 
 	var repos []registry.RepoInfo
-	entries, err := os.ReadDir(absDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read workspace directory: %w", err)
-	}
+	visited := make(map[string]bool)
 
-	// 1. Check if the directory itself is a single repo
-	selfNode := scanPackageJSON(absDir)
-	selfPython := scanPythonDir(absDir)
-	selfJava := scanJavaDir(absDir)
-	selfGo := scanGoDir(absDir)
-	var selfMatch *scannedRepoData
-	for _, m := range []*scannedRepoData{selfNode, selfPython, selfJava, selfGo} {
-		if m != nil {
-			selfMatch = m
-			break
+	var scanDir func(dir string, depth int)
+	scanDir = func(dir string, depth int) {
+		if depth > 4 || visited[dir] {
+			return
 		}
-	}
+		visited[dir] = true
 
-	// 2. Scan subdirectories
-	for _, entry := range entries {
-		if !entry.IsDir() || ignoredDirs[entry.Name()] || strings.HasPrefix(entry.Name(), ".") {
-			continue
-		}
-
-		subDir := filepath.Join(absDir, entry.Name())
-		var subMatch *scannedRepoData
-		for _, fn := range []func(string) *scannedRepoData{scanPackageJSON, scanPythonDir, scanJavaDir, scanGoDir} {
-			if m := fn(subDir); m != nil {
-				subMatch = m
-				break
+		// Check if this subdirectory is a microservice / repository
+		if dir != absDir {
+			if match := matchRepo(dir); match != nil {
+				port := InferPort(dir)
+				repos = append(repos, registry.RepoInfo{
+					Name:        match.Name,
+					LocalPath:   strings.ReplaceAll(dir, "\\", "/"),
+					Description: match.Description,
+					TechStack:   match.TechStack,
+					EntryPoint:  match.EntryPoint,
+					Port:        port,
+				})
+				return // Found a service, do not descend deeper inside its code tree
 			}
 		}
 
-		if subMatch != nil {
-			port := InferPort(subDir)
-			repos = append(repos, registry.RepoInfo{
-				Name:        subMatch.Name,
-				LocalPath:   strings.ReplaceAll(subDir, "\\", "/"),
-				Description: subMatch.Description,
-				TechStack:   subMatch.TechStack,
-				EntryPoint:  subMatch.EntryPoint,
-				Port:        port,
-			})
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return
+		}
+
+		for _, entry := range entries {
+			if !entry.IsDir() || ignoredDirs[entry.Name()] || strings.HasPrefix(entry.Name(), ".") {
+				continue
+			}
+			subDir := filepath.Join(dir, entry.Name())
+			scanDir(subDir, depth+1)
 		}
 	}
 
-	// If no sub-repos found but root is a repo, add root
-	if len(repos) == 0 && selfMatch != nil {
-		port := InferPort(absDir)
-		repos = append(repos, registry.RepoInfo{
-			Name:        selfMatch.Name,
-			LocalPath:   strings.ReplaceAll(absDir, "\\", "/"),
-			Description: selfMatch.Description,
-			TechStack:   selfMatch.TechStack,
-			EntryPoint:  selfMatch.EntryPoint,
-			Port:        port,
-		})
+	scanDir(absDir, 0)
+
+	// If no nested services were found, check if root itself is a single repo
+	if len(repos) == 0 {
+		if selfMatch := matchRepo(absDir); selfMatch != nil {
+			port := InferPort(absDir)
+			repos = append(repos, registry.RepoInfo{
+				Name:        selfMatch.Name,
+				LocalPath:   strings.ReplaceAll(absDir, "\\", "/"),
+				Description: selfMatch.Description,
+				TechStack:   selfMatch.TechStack,
+				EntryPoint:  selfMatch.EntryPoint,
+				Port:        port,
+			})
+		}
 	}
 
 	relationships := InferRelationships(repos, absDir)

@@ -56,8 +56,11 @@ func TestRegistryPersistenceAndLoading(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
+	catPath := filepath.Join(tmpDir, "test-projects.yaml")
+	t.Setenv("MCP_PROJECTS_CATALOG", catPath)
+
 	tmpFile := filepath.Join(tmpDir, "registry.yaml")
-	port := 8080
+	port := 43770
 	reg := &ProjectRegistry{
 		ProjectID:   "fintech",
 		Name:        "FinTech Platform",
@@ -97,3 +100,62 @@ func TestRegistryPersistenceAndLoading(t *testing.T) {
 		t.Fatalf("ProjectID mismatch: %s", loadedFromDir.ProjectID)
 	}
 }
+
+func TestCatalogRegistration(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "oss-cat-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	catPath := filepath.Join(tmpDir, "projects.yaml")
+	t.Setenv("MCP_PROJECTS_CATALOG", catPath)
+
+	regFile := filepath.Join(tmpDir, "my-service", "registry.yaml")
+	reg := &ProjectRegistry{
+		ProjectID:   "my-service",
+		Name:        "My Microservice",
+		Description: "Testing catalog registration",
+		Repos: []RepoInfo{
+			{Name: "api", LocalPath: filepath.Join(tmpDir, "my-service", "api")},
+		},
+	}
+
+	saved, err := SaveRegistry(reg, regFile)
+	if err != nil {
+		t.Fatalf("SaveRegistry failed: %v", err)
+	}
+
+	// Verify catalog contains the project
+	catalog := GetProjectsCatalog()
+	entry, exists := catalog["my-service"]
+	if !exists {
+		t.Fatalf("Project not registered in catalog: %+v", catalog)
+	}
+	if entry.RegistryPath != saved {
+		t.Fatalf("RegistryPath mismatch: got %s, want %s", entry.RegistryPath, saved)
+	}
+
+	// Test LoadRegistry by project ID
+	loaded, err := LoadRegistry("my-service")
+	if err != nil {
+		t.Fatalf("LoadRegistry by project ID failed: %v", err)
+	}
+	if loaded.ProjectID != "my-service" {
+		t.Fatalf("Loaded ProjectID mismatch: %s", loaded.ProjectID)
+	}
+
+	// Test ListAvailableProjects includes it
+	projects := ListAvailableProjects()
+	found := false
+	for _, p := range projects {
+		if p.ProjectID == "my-service" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("my-service not found in ListAvailableProjects: %+v", projects)
+	}
+}
+

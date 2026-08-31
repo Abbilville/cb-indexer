@@ -17,29 +17,22 @@ func GetUserConfigDir() string {
 	return filepath.Join(home, ".config", "oss-mcp")
 }
 
-// GetUserProjectsCatalogPath returns the default machine catalog path.
+// GetUserProjectsCatalogPath returns the default machine catalog path (honoring MCP_PROJECTS_CATALOG override).
 func GetUserProjectsCatalogPath() string {
+	if envPath := os.Getenv("MCP_PROJECTS_CATALOG"); envPath != "" {
+		return envPath
+	}
 	return filepath.Join(GetUserConfigDir(), "projects.yaml")
 }
 
 // GetProjectsCatalog loads and merges projects from user config and env var MCP_PROJECTS_CATALOG.
 func GetProjectsCatalog() map[string]ProjectCatalogEntry {
-	var catalogPaths []string
 	userPath := GetUserProjectsCatalogPath()
-	if userPath != "" {
-		catalogPaths = append(catalogPaths, userPath)
-	}
-	if envPath := os.Getenv("MCP_PROJECTS_CATALOG"); envPath != "" {
-		catalogPaths = append(catalogPaths, envPath)
-	}
-
 	merged := make(map[string]ProjectCatalogEntry)
-	for _, cPath := range catalogPaths {
-		if info, err := os.Stat(cPath); err == nil && !info.IsDir() {
-			data, err := os.ReadFile(cPath)
-			if err != nil {
-				continue
-			}
+
+	if info, err := os.Stat(userPath); err == nil && !info.IsDir() {
+		data, err := os.ReadFile(userPath)
+		if err == nil {
 			var cat ProjectsCatalog
 			if err := yaml.Unmarshal(data, &cat); err == nil && cat.Projects != nil {
 				for pid, pinfo := range cat.Projects {
@@ -49,6 +42,40 @@ func GetProjectsCatalog() map[string]ProjectCatalogEntry {
 		}
 	}
 	return merged
+}
+
+// RegisterProjectInCatalog adds or updates a project entry in the user catalog projects.yaml.
+func RegisterProjectInCatalog(projectID string, entry ProjectCatalogEntry) error {
+	if projectID == "" {
+		return nil
+	}
+	userPath := GetUserProjectsCatalogPath()
+	if userPath == "" {
+		return nil
+	}
+
+	parentDir := filepath.Dir(userPath)
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		return err
+	}
+
+	var cat ProjectsCatalog
+	cat.Projects = make(map[string]ProjectCatalogEntry)
+
+	if data, err := os.ReadFile(userPath); err == nil {
+		_ = yaml.Unmarshal(data, &cat)
+		if cat.Projects == nil {
+			cat.Projects = make(map[string]ProjectCatalogEntry)
+		}
+	}
+
+	cat.Projects[projectID] = entry
+	outData, err := yaml.Marshal(cat)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(userPath, outData, 0644)
 }
 
 // UnregisterProjectFromCatalog removes a project entry from catalog files.
@@ -94,6 +121,7 @@ type ProjectSummary struct {
 	Description  string `json:"description"`
 	RegistryPath string `json:"registry_path"`
 	RootPath     string `json:"root_path"`
+	TotalRepos   int    `json:"total_repos"`
 }
 
 // ListAvailableProjects returns all registered projects in catalogs and the current workspace.
@@ -102,16 +130,37 @@ func ListAvailableProjects() []ProjectSummary {
 	var projects []ProjectSummary
 
 	for pid, info := range catalog {
+		if info.RegistryPath != "" {
+			if stat, err := os.Stat(info.RegistryPath); err != nil || stat.IsDir() {
+				// Registry file no longer exists (e.g. temporary test directory deleted)
+				continue
+			}
+		}
+
 		name := info.Name
 		if name == "" {
 			name = pid
 		}
+
+		totalRepos := 0
+		if info.RegistryPath != "" {
+			if data, err := os.ReadFile(info.RegistryPath); err == nil {
+				var raw struct {
+					Repos []any `yaml:"repos"`
+				}
+				if err := yaml.Unmarshal(data, &raw); err == nil {
+					totalRepos = len(raw.Repos)
+				}
+			}
+		}
+
 		projects = append(projects, ProjectSummary{
 			ProjectID:    pid,
 			Name:         name,
 			Description:  info.Description,
 			RegistryPath: info.RegistryPath,
 			RootPath:     info.RootPath,
+			TotalRepos:   totalRepos,
 		})
 	}
 
@@ -123,6 +172,7 @@ func ListAvailableProjects() []ProjectSummary {
 				ProjectID   string `yaml:"project_id"`
 				Name        string `yaml:"name"`
 				Description string `yaml:"description"`
+				Repos       []any  `yaml:"repos"`
 			}
 			if err := yaml.Unmarshal(data, &raw); err == nil {
 				pID := raw.ProjectID
@@ -153,6 +203,7 @@ func ListAvailableProjects() []ProjectSummary {
 						Description:  desc,
 						RegistryPath: workspaceReg,
 						RootPath:     filepath.Dir(workspaceReg),
+						TotalRepos:   len(raw.Repos),
 					}}, projects...)
 				}
 			}

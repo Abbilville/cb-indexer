@@ -52,7 +52,7 @@ func TestScannerMultiStack(t *testing.T) {
 	os.MkdirAll(goDir, 0755)
 	os.WriteFile(filepath.Join(goDir, "go.mod"), []byte("module test/gateway\n\ngo 1.20\n\nrequire github.com/gin-gonic/gin v1.9.1\n"), 0644)
 	os.WriteFile(filepath.Join(goDir, "main.go"), []byte("package main\nfunc main() {}\n"), 0644)
-	os.WriteFile(filepath.Join(goDir, ".env"), []byte("PORT=8080\n"), 0644)
+	os.WriteFile(filepath.Join(goDir, ".env"), []byte("PORT=43770\n"), 0644)
 
 	registry, err := ScanWorkspace(tmpWorkspace, "test-workspace")
 	if err != nil {
@@ -100,3 +100,34 @@ func TestScannerMultiStack(t *testing.T) {
 		t.Fatal("Expected relationships between frontend and backend")
 	}
 }
+
+func TestScannerNestedServices(t *testing.T) {
+	tmpWorkspace, err := os.MkdirTemp("", "scanner-nested-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpWorkspace)
+
+	// Create nested structure: workspace/services/auth, workspace/services/account, workspace/apps/web
+	authDir := filepath.Join(tmpWorkspace, "services", "auth-service")
+	os.MkdirAll(authDir, 0755)
+	os.WriteFile(filepath.Join(authDir, "go.mod"), []byte("module bank/auth\n\ngo 1.22\n"), 0644)
+
+	accDir := filepath.Join(tmpWorkspace, "services", "account-service")
+	os.MkdirAll(accDir, 0755)
+	os.WriteFile(filepath.Join(accDir, "package.json"), []byte(`{"name":"account-service"}`), 0644)
+
+	webDir := filepath.Join(tmpWorkspace, "apps", "web-portal")
+	os.MkdirAll(webDir, 0755)
+	os.WriteFile(filepath.Join(webDir, "package.json"), []byte(`{"name":"web-portal"}`), 0644)
+
+	reg, err := ScanWorkspace(tmpWorkspace, "bank-nested")
+	if err != nil {
+		t.Fatalf("ScanWorkspace failed: %v", err)
+	}
+
+	if len(reg.Repos) != 3 {
+		t.Fatalf("Expected 3 nested repos, found %d: %+v", len(reg.Repos), reg.Repos)
+	}
+}
+

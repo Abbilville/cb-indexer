@@ -86,7 +86,26 @@ func InferRelationships(repos []registry.RepoInfo, workspacePath string) []regis
 			continue
 		}
 
-		combinedContent := collectRepoCodeText(repoDir, 3)
+		combinedContent := collectRepoCodeText(repoDir, 4)
+		combinedContentLower := strings.ToLower(combinedContent)
+
+		// Helper to avoid duplicate edges
+		addEdge := func(src, tgt, rType, desc string) {
+			if strings.EqualFold(src, tgt) {
+				return
+			}
+			for _, rel := range relationships {
+				if strings.EqualFold(rel.Source, src) && strings.EqualFold(rel.Target, tgt) && strings.EqualFold(rel.Type, rType) {
+					return
+				}
+			}
+			relationships = append(relationships, registry.RelationshipInfo{
+				Source:      src,
+				Target:      tgt,
+				Type:        rType,
+				Description: desc,
+			})
+		}
 
 		// 1. Check port connections
 		for targetPort, targetName := range repoPortMap {
@@ -95,16 +114,50 @@ func InferRelationships(repos []registry.RepoInfo, workspacePath string) []regis
 			}
 			portStr := strconv.Itoa(targetPort)
 			if strings.Contains(combinedContent, portStr) || strings.Contains(combinedContent, ":"+portStr) {
-				relationships = append(relationships, registry.RelationshipInfo{
-					Source:      repo.Name,
-					Target:      targetName,
-					Type:        "api_call",
-					Description: fmt.Sprintf("%s communicates with %s on port %d", repo.Name, targetName, targetPort),
-				})
+				addEdge(repo.Name, targetName, "api_call", fmt.Sprintf("%s communicates with %s on port %d", repo.Name, targetName, targetPort))
 			}
 		}
 
-		// 2. Check frontend-to-backend conventions
+		// 2. Check service name / routing mentions in configs and code
+		isGateway := strings.Contains(strings.ToLower(repo.Name), "gateway") || strings.Contains(strings.ToLower(repo.Name), "proxy")
+		isDiscovery := strings.Contains(strings.ToLower(repo.Name), "discovery") || strings.Contains(strings.ToLower(repo.Name), "eureka") || strings.Contains(strings.ToLower(repo.Name), "consul")
+
+		for _, target := range repos {
+			if strings.EqualFold(target.Name, repo.Name) {
+				continue
+			}
+			tNameLower := strings.ToLower(target.Name)
+			tBaseLower := strings.TrimSuffix(tNameLower, "-service")
+			tBaseLower = strings.TrimSuffix(tBaseLower, "-app")
+			tBaseLower = strings.TrimSuffix(tBaseLower, "-api")
+
+			targetIsDiscovery := strings.Contains(tNameLower, "discovery") || strings.Contains(tNameLower, "eureka")
+
+			// Check if target name is referenced
+			if strings.Contains(combinedContentLower, tNameLower) || (len(tBaseLower) >= 4 && strings.Contains(combinedContentLower, tBaseLower)) {
+				if targetIsDiscovery {
+					addEdge(repo.Name, target.Name, "registers_with", fmt.Sprintf("%s registers with service registry %s", repo.Name, target.Name))
+				} else if isGateway {
+					addEdge(repo.Name, target.Name, "routes_to", fmt.Sprintf("API Gateway routes traffic to %s", target.Name))
+				} else {
+					addEdge(repo.Name, target.Name, "api_call", fmt.Sprintf("%s invokes service %s", repo.Name, target.Name))
+				}
+			}
+
+			// Spring Cloud Discovery default convention: microservices register with discovery-service
+			if targetIsDiscovery && !isGateway && !isDiscovery {
+				if strings.Contains(combinedContentLower, "eureka") || strings.Contains(combinedContentLower, "discovery") || strings.Contains(combinedContentLower, "cloud") {
+					addEdge(repo.Name, target.Name, "registers_with", fmt.Sprintf("%s registers with service registry %s", repo.Name, target.Name))
+				}
+			}
+
+			// API Gateway convention: routes to backend microservices
+			if isGateway && !targetIsDiscovery {
+				addEdge(repo.Name, target.Name, "routes_to", fmt.Sprintf("API Gateway routes incoming client traffic to %s", target.Name))
+			}
+		}
+
+		// 3. Check frontend-to-backend conventions
 		isFrontend := hasTechStack(repo.TechStack, "React", "Vue", "Angular", "Next.js") ||
 			strings.Contains(strings.ToLower(repo.Name), "fe") ||
 			strings.Contains(strings.ToLower(repo.Name), "frontend")
@@ -120,29 +173,8 @@ func InferRelationships(repos []registry.RepoInfo, workspacePath string) []regis
 					strings.Contains(strings.ToLower(target.Name), "api")
 
 				if isBackend {
-					alreadyExists := false
-					for _, rel := range relationships {
-						if strings.EqualFold(rel.Source, repo.Name) && strings.EqualFold(rel.Target, target.Name) {
-							alreadyExists = true
-							break
-						}
-					}
-					if !alreadyExists {
-						relationships = append(relationships,
-							registry.RelationshipInfo{
-								Source:      repo.Name,
-								Target:      target.Name,
-								Type:        "api_call",
-								Description: fmt.Sprintf("%s invokes REST/GraphQL endpoints on %s", repo.Name, target.Name),
-							},
-							registry.RelationshipInfo{
-								Source:      repo.Name,
-								Target:      target.Name,
-								Type:        "depends_on",
-								Description: fmt.Sprintf("%s depends on %s for authentication state and data contracts", repo.Name, target.Name),
-							},
-						)
-					}
+					addEdge(repo.Name, target.Name, "api_call", fmt.Sprintf("%s invokes REST/GraphQL endpoints on %s", repo.Name, target.Name))
+					addEdge(repo.Name, target.Name, "depends_on", fmt.Sprintf("%s depends on %s contracts", repo.Name, target.Name))
 				}
 			}
 		}
