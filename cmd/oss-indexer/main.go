@@ -45,7 +45,7 @@ func main() {
 	if len(os.Args) < 2 {
 		// Default to running MCP HTTP server
 		srv := mcpserver.NewServer()
-		port := 8080
+		port := 43770
 		if pEnv := os.Getenv("PORT"); pEnv != "" {
 			if p, err := strconv.Atoi(pEnv); err == nil {
 				port = p
@@ -64,7 +64,7 @@ func main() {
 	switch command {
 	case "daemon":
 		fs := flag.NewFlagSet("daemon", flag.ExitOnError)
-		port := fs.Int("port", 8080, "HTTP MCP server port")
+		port := fs.Int("port", 43770, "HTTP MCP server port")
 		intervalStr := fs.String("interval", "15m", "Polling interval (e.g. 15m, 1h)")
 		pull := fs.Bool("pull", true, "Automatically git pull before indexing")
 		project := fs.String("project", "", "Target project ID from catalog")
@@ -270,7 +270,7 @@ func main() {
 
 	case "run":
 		fs := flag.NewFlagSet("run", flag.ExitOnError)
-		port := fs.Int("port", 8080, "HTTP port")
+		port := fs.Int("port", 43770, "HTTP port")
 		useStdio := fs.Bool("stdio", false, "Use Stdio transport instead of HTTP")
 		authToken := fs.String("auth-token", os.Getenv("OSS_INDEXER_AUTH_TOKEN"), "Secret token for HTTP auth")
 		fs.Parse(os.Args[2:])
