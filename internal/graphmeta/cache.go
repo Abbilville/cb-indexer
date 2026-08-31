@@ -72,8 +72,12 @@ func ScanGlobalCbmCache() []CbmCacheItem {
 				dbPath := filepath.Join(dir, entry.Name())
 				projectName := strings.TrimSuffix(entry.Name(), ".db")
 				info, err := entry.Info()
-				if err != nil {
-					continue
+				nodes, edges, err := QueryCbmStats(dbPath)
+				var nodesPtr *int
+				var edgesPtr *int
+				if err == nil {
+					nodesPtr = &nodes
+					edgesPtr = &edges
 				}
 
 				results = append(results, CbmCacheItem{
@@ -83,6 +87,8 @@ func ScanGlobalCbmCache() []CbmCacheItem {
 					SizeBytes:    info.Size(),
 					LastModified: info.ModTime(),
 					IsIndexed:    true,
+					Nodes:        nodesPtr,
+					Edges:        edgesPtr,
 					Source:       "global_cache",
 				})
 			}

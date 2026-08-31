@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"oss-indexer/internal/registry"
+	"oss-indexer/internal/scanner"
 )
 
 // RepoIndexInfo represents the indexing status for a single repository.
@@ -85,15 +86,18 @@ type RepoStatusDetail struct {
 
 // ProjectStatusReport represents a complete health & freshness report for a project ecosystem.
 type ProjectStatusReport struct {
-	ProjectID          string             `json:"project_id"`
-	ProjectName        string             `json:"project_name"`
-	Description        string             `json:"description,omitempty"`
-	SourcePath         string             `json:"source_path,omitempty"`
-	TotalRepos         int                `json:"total_repos"`
-	IndexedRepos       int                `json:"indexed_repos"`
-	UnindexedRepos     int                `json:"unindexed_repos"`
-	TotalRelationships int                `json:"total_relationships"`
-	Repos              []RepoStatusDetail `json:"repos"`
+	ProjectID          string                      `json:"project_id"`
+	ProjectName        string                      `json:"project_name"`
+	Description        string                      `json:"description,omitempty"`
+	SourcePath         string                      `json:"source_path,omitempty"`
+	TotalRepos         int                         `json:"total_repos"`
+	IndexedRepos       int                         `json:"indexed_repos"`
+	UnindexedRepos     int                         `json:"unindexed_repos"`
+	TotalNodes         int                         `json:"total_nodes"`
+	TotalEdges         int                         `json:"total_edges"`
+	TotalRelationships int                         `json:"total_relationships"`
+	Relationships      []registry.RelationshipInfo `json:"relationships"`
+	Repos              []RepoStatusDetail          `json:"repos"`
 }
 
 // CheckProjectStatus evaluates indexing freshness for all repositories in the registry.
@@ -101,6 +105,8 @@ func CheckProjectStatus(reg *registry.ProjectRegistry) ProjectStatusReport {
 	cached := ScanGlobalCbmCache()
 	var details []RepoStatusDetail
 	indexedCount := 0
+	totalNodes := 0
+	totalEdges := 0
 
 	baseDir := ""
 	if reg.SourcePath != "" {
@@ -117,6 +123,12 @@ func CheckProjectStatus(reg *registry.ProjectRegistry) ProjectStatusReport {
 		if idx.IsIndexed {
 			indexedCount++
 		}
+		if idx.IndexNodes != nil {
+			totalNodes += *idx.IndexNodes
+		}
+		if idx.IndexEdges != nil {
+			totalEdges += *idx.IndexEdges
+		}
 
 		details = append(details, RepoStatusDetail{
 			Name:       repo.Name,
@@ -131,6 +143,15 @@ func CheckProjectStatus(reg *registry.ProjectRegistry) ProjectStatusReport {
 		})
 	}
 
+	rels := reg.Relationships
+	if len(rels) == 0 {
+		baseDir := ""
+		if reg.SourcePath != "" {
+			baseDir = filepath.Dir(reg.SourcePath)
+		}
+		rels = scanner.InferRelationships(reg.Repos, baseDir)
+	}
+
 	return ProjectStatusReport{
 		ProjectID:          reg.ProjectID,
 		ProjectName:        reg.Name,
@@ -139,7 +160,10 @@ func CheckProjectStatus(reg *registry.ProjectRegistry) ProjectStatusReport {
 		TotalRepos:         len(reg.Repos),
 		IndexedRepos:       indexedCount,
 		UnindexedRepos:     len(reg.Repos) - indexedCount,
-		TotalRelationships: len(reg.Relationships),
+		TotalNodes:         totalNodes,
+		TotalEdges:         totalEdges,
+		TotalRelationships: len(rels),
+		Relationships:      rels,
 		Repos:              details,
 	}
 }
