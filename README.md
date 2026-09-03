@@ -2,202 +2,131 @@
 
 # 📦 oss-indexer
 
-**Autonomous Topology Control Plane, Architecture Map & Real-Time AST Ingestion Daemon for Microservices & Multi-Repo Workspaces**
+**Autonomous Microservice Topology Control Plane, Interactive Whiteboard Architecture Canvas & Real-Time AST Knowledge Graph Daemon**
 
 [![Release](https://img.shields.io/github/v/release/Abbilville/oss-indexer?style=for-the-badge&color=2563eb&logo=github)](https://github.com/Abbilville/oss-indexer/releases)
 [![Go Version](https://img.shields.io/badge/Go-%3E%3D1.25-00ADD8?style=for-the-badge&logo=go)](https://golang.org/)
 [![MCP Protocol](https://img.shields.io/badge/MCP-2024--11--05-ea580c?style=for-the-badge&logo=anthropic)](https://modelcontextprotocol.io/)
-[![Docker](https://img.shields.io/badge/Docker-Build%20from%20Source-2496ED?style=for-the-badge&logo=docker)](#1-docker--docker-compose-build-from-source)
+[![Docker](https://img.shields.io/badge/Docker-Build%20from%20Source-2496ED?style=for-the-badge&logo=docker)](#-docker--container-deployment)
 [![License](https://img.shields.io/badge/License-MIT-10b981?style=for-the-badge)](LICENSE)
 
 <p align="center">
-  <a href="#-quick-start-step-by-step">Quick Start</a> •
-  <a href="#-web-dashboard--whiteboard-topology">Web Dashboard</a> •
+  <a href="#-quick-start">Quick Start</a> •
+  <a href="#-connecting-ai-agents-via-mcp">MCP Setup</a> •
+  <a href="#-mcp-tools-reference--ai-prompt-examples">MCP Tools</a> •
+  <a href="#-web-dashboard-guide">Dashboard Guide</a> •
   <a href="#-cli-reference">CLI Reference</a> •
-  <a href="#-ai-agent--mcp-setup">MCP Setup</a> •
-  <a href="#-production-deployment">Production Deploy</a> •
-  <a href="#-manifest-schema-registryyaml">Manifest Schema</a> •
-  <a href="#-faq--troubleshooting">FAQ</a>
+  <a href="#-private-repositories--git-sync">Git & Auth</a> •
+  <a href="#-docker--container-deployment">Docker</a>
 </p>
 
 </div>
 
 ---
 
-## 🌟 Overview
-
-`oss-indexer` is a single-binary **microservice control plane, interactive whiteboard architecture map, and background AST knowledge graph ingestion daemon**. Built in Go with zero CGO dependencies using the official [Model Context Protocol Go SDK](https://github.com/modelcontextprotocol/go-sdk), it bridges your source code, runtime service topologies, and AI pair-programmers.
-
-```mermaid
-flowchart LR
-    subgraph MultiRepo ["📂 Polyrepo / Microservices Workspace"]
-        S1["📦 auth-service\n(Go / Gin :8081)"]
-        S2["📦 order-service\n(Java / Spring :8082)"]
-        S3["📦 payment-service\n(Node / Express :4000)"]
-        S4["📦 gateway-service\n(Spring Cloud :8888)"]
-    end
-
-    subgraph Indexer ["⚙️ oss-indexer (Single Binary Hub)"]
-        Scanner["🔍 Deep Workspace Scanner\n(15+ Frameworks & Ports)"]
-        Whiteboard["📋 Interactive Whiteboard Map\n(Curved Arcs & Bounding Box)"]
-        Watcher["🔄 Background Git Daemon\n(Auto-Pull & Re-index)"]
-        SSE["⚡ Real-Time SSE Stream\n(/api/events)"]
-        MCP["🌐 Streamable HTTP MCP Server\n(:43770/mcp)"]
-    end
-
-    subgraph KnowledgeGraph ["🧠 Knowledge Graph (codebase-memory-mcp)"]
-        AST["SQLite AST Graph DBs\n(~/.cache/codebase-memory-mcp)"]
-    end
-
-    subgraph Agents ["🤖 AI Agents & IDEs"]
-        Claude["Claude Desktop / Cursor"]
-        AntiGravity["Antigravity IDE / Cline"]
-    end
-
-    MultiRepo -->|"1. Scan & Discover"| Scanner
-    Scanner -->|"2. Render Network"| Whiteboard
-    Scanner -->|"3. Batch Ingest"| AST
-    Watcher -.->|"4. Track Commits"| MultiRepo
-    Watcher -.->|"5. Live Progress"| SSE
-    AST -.->|"6. Read Nodes & Edges"| Whiteboard
-    MCP <-->|"7. MCP Tools"| Agents
-```
+<p align="center">
+  <img src="docs/assets/dashboard1.png" alt="oss-indexer Dashboard & Whiteboard Architecture Map" width="100%" style="border-radius: 8px; border: 1px solid #1e293b; box-shadow: 0 8px 24px rgba(0,0,0,0.5);" />
+</p>
+<p align="center">
+  <img src="docs/assets/dashboard2.png" alt="oss-indexer Dashboard & Whiteboard Architecture Map" width="100%" style="border-radius: 8px; border: 1px solid #1e293b; box-shadow: 0 8px 24px rgba(0,0,0,0.5);" />
+</p>
 
 ---
 
-## ⚡ Key Capabilities
+## 🌟 What is oss-indexer?
 
-- **🧠 Live AST Graph Sync**: Directly reads exact Abstract Syntax Tree (AST) node counts, call graph edges, and symbol tables from `codebase-memory-mcp` SQLite stores.
-- **📋 Whiteboard Architecture Canvas**: Full infinite-canvas whiteboard experience with drag-to-pan, mouse-wheel cursor zoom, draggable nodes, and a luminous workspace boundary box.
-- **🌈 Curved Multi-Edge Fan-Out**: Automatically calculates quadratic Bezier arcs so overlapping/bidirectional inter-service lines never stack.
-- **⚡ Real-Time Live Streaming**: Watch indexing jobs execute in real-time across terminal stdout and the web dashboard via Server-Sent Events (`/api/events`).
-- **🔍 Deep Multi-Stack Scanner**: Auto-detects Go, Java (Spring Boot / Maven / Gradle), Node.js (Express / Nest / Next), Python (FastAPI / Django), Rust, C#/.NET, and PHP along with their listening ports.
-- **🤖 Standalone Daemon & HTTP MCP Server**: Runs continuously in the background, checking for Git commits and exposing standard MCP tools over HTTP.
-- **🐳 Single Binary & Docker Ready**: Zero CGO dependencies, self-contained embedded web assets, and instant container deployment.
+Modern software projects often consist of multiple microservices, frontend applications, and shared libraries spread across polyrepos or monorepos.
+
+When developers work with **AI coding assistants** (like Cursor, Claude Desktop, Antigravity IDE, or Cline), AI agents typically only see the current opened directory. They lack the high-level picture:
+- *Which service communicates with which?*
+- *What runtime port does the authentication service run on?*
+- *Which services route through the API Gateway or register with Eureka / Consul?*
+- *Are the AST code memory graphs for all microservices up to date?*
+
+**`oss-indexer` solves this.** It runs as a lightweight, single-binary background daemon that:
+1. **Deep-Scans Workspaces**: Automatically discovers all microservices, tech stacks (Go, Node.js, Python, Java Spring Boot, etc.), and assigned ports.
+2. **Builds Interactive Topology Maps**: Renders an infinite-canvas whiteboard with directional routing arrows and curved non-overlapping Bezier lines.
+3. **Ingests AST Graphs**: Integrates directly with [`codebase-memory-mcp`](https://github.com/DeusData/codebase-memory-mcp) to maintain Abstract Syntax Tree (AST) knowledge graphs and call hierarchies.
+4. **Exposes MCP Tools**: Serves 9 standardized Model Context Protocol tools over Streamable HTTP and Stdio, empowering AI agents to query cross-service relationships, trace API hops, and trigger re-indexing on demand.
 
 ---
 
-## 🚀 Quick Start (Step-by-Step)
+## ⚡ Key Highlights
+
+| Feature | Description |
+| :--- | :--- |
+| 📋 **Whiteboard Architecture Canvas** | Infinite whiteboard canvas with drag-to-pan, mouse cursor zoom, draggable nodes, and bounded workspace perimeters. |
+| 🌈 **Non-Overlapping Multi-Edge Arcs** | Curved quadratic Bezier arcs prevent lines from stacking when multiple routes exist between the same pair of services. |
+| 📊 **100% Project-Focused Metrics** | Real-time hero cards tracking `Total Services`, `Index Coverage`, `Total Nodes`, and `Service Connections`. |
+| 🔍 **Native Folder Browser Dialog** | Integrated OS Explorer folder selection (`Browse...`) to effortlessly register local workspaces. |
+| 🐙 **Git Origin & Source Tracing** | Automatically classifies whether a service originates from the Monorepo Root or an independent Service repo, with clean ellipsis truncation. |
+| 🔄 **Git Pull & Automatic Sync** | One-click `Git Pull & Sync All` to pull latest commits and re-index modified files into the knowledge graph. |
+| ⚡ **Real-Time Live SSE Stream** | Watch background indexing jobs, warnings, and completions live on terminal stdout and the dashboard via Server-Sent Events (`/api/events`). |
+| 🤖 **Standard MCP Server** | Connects seamlessly with Claude Desktop, Cursor, Antigravity IDE, Cline, and Continue via HTTP or Stdio. |
+
+---
+
+## 🚀 Quick Start
 
 ### 1. Prerequisites
 
-Make sure you have **Go (>= 1.25)** and **Node.js (>= 18)** installed on your machine.
-
-If you don't have [`codebase-memory-mcp`](https://github.com/DeusData/codebase-memory-mcp) installed yet, install it globally via npm:
-
-```bash
-npm install -g codebase-memory-mcp
-```
+- **Go (>= 1.25)**: To compile or run `oss-indexer`.
+- **Node.js (>= 18)**: Required to use the AST memory graph engine.
+- **codebase-memory-mcp**:
+  ```bash
+  npm install -g codebase-memory-mcp
+  ```
 
 ---
 
-### 2. Clone and Install `oss-indexer`
+### 2. Installation
 
+#### Option A: Global Go Install (Recommended)
 ```bash
-# Clone repository
+go install github.com/Abbilville/oss-indexer/cmd/oss-indexer@latest
+```
+*Installs `oss-indexer` directly to `$GOPATH/bin` so you can run it from any terminal.*
+
+#### Option B: Build from Source
+```bash
 git clone https://github.com/Abbilville/oss-indexer.git
 cd oss-indexer
-```
 
-#### Option A: Install Globally via Go (Recommended)
-```bash
-go install ./cmd/oss-indexer
-```
-*Installs `oss-indexer` directly to `$GOPATH/bin` so you can run `oss-indexer` from any directory in your terminal.*
-
-#### Option B: Build Local Binary
-```bash
 # Linux / macOS
 go build -o bin/oss-indexer ./cmd/oss-indexer
 
-# Windows PowerShell / CMD
+# Windows PowerShell
 go build -o bin/oss-indexer.exe ./cmd/oss-indexer
 ```
 
 ---
 
-### 3. Launch the Hub & Dashboard
-
-Start the background daemon on default port `43770`:
+### 3. Start the Daemon
 
 ```bash
-# If installed globally:
+# Start background daemon on port 43770
 oss-indexer daemon
-
-# Or if using local binary:
-./bin/oss-indexer daemon            # Linux / macOS
-.\bin\oss-indexer.exe daemon        # Windows PowerShell
 ```
 
-Output:
+Terminal output:
 ```text
 [oss-indexer] Daemon started (interval: 15m0s, auto-pull: true, mode: moderate)
 [oss-indexer] Dashboard UI:    http://127.0.0.1:43770/
 [oss-indexer] MCP HTTP Server: http://127.0.0.1:43770/mcp
 ```
 
----
-
-### 4. Open the Web Dashboard
-
-Open your browser at **[http://localhost:43770/](http://localhost:43770/)**:
-1. Click **"Scan New Workspace"** on the right sidebar and enter your project path (e.g. `/path/to/services` or `C:\my-project`).
-2. Click **"Batch Re-index Project"** in the Action Center.
-3. Watch your services get scanned, mapped into the topology whiteboard, and indexed in real-time!
+Open your browser at **[http://localhost:43770/](http://localhost:43770/)**.
 
 ---
 
-## 📋 Web Dashboard & Whiteboard Topology
+## 🤖 Connecting AI Agents via MCP
 
-The built-in web dashboard provides an interactive control center for your microservice ecosystem:
+`oss-indexer` speaks the official [Model Context Protocol (MCP)](https://modelcontextprotocol.io/). You can connect it via **HTTP Stream** (when the daemon is running) or **Stdio** (standalone binary execution).
 
-### 1. Interactive Whiteboard Canvas
-- **🖐️ Free Canvas Panning**: Click and drag anywhere on the canvas background to move freely across the canvas.
-- **🔍 Cursor-Centered Zoom**: Scroll the mouse wheel over any point to zoom smoothly ($35\% - 250\%$).
-- **⛶ Workspace Bounding Box**: A luminous boundary box (`⛶ WORKSPACE`) frames your architecture perimeter.
-- **🎯 Constrained Node Dragging**: Drag any service node to arrange your layout; all connected curved lines update dynamically in real time.
-- **⟲ One-Click Reset View**: Instantly re-centers the whiteboard and resets the zoom level to $100\%$.
+### 1. Cursor IDE
 
-### 2. Curved Multi-Edge Arcs (No Overlapping Lines)
-When multiple connections connect the same pair of services (e.g. Gateway routing + Eureka discovery + direct REST calls), the engine automatically separates them into curved quadratic Bezier arcs:
-- 🔵 **Solid Blue Arc**: API Gateway traffic route (`routes_to`)
-- 🟣 **Dashed Purple Arc**: Service Discovery registration (`registers_with`)
-- 🟢 **Cyan Arc**: Direct REST / Feign invocation (`api_call`)
+Open **Cursor Settings** $\rightarrow$ **Features** $\rightarrow$ **MCP**, or edit `.cursor/mcp.json`:
 
-### 3. Service Detail & AST Inspector Modal
-Clicking on **any microservice card or topology node** opens a detail inspector:
-- **🧠 AST Metrics**: Exact Indexed AST Nodes & Call Graph Edges from SQLite.
-- **🔗 Communication Links**: Inbound callers and outbound dependencies.
-- **🛠️ Tech Stack & Ports**: Detected frameworks, runtime ports, and local file paths.
-- **⚡ Re-index Button**: Trigger an incremental re-index for just that single service.
-
----
-
-## 🛠️ CLI Reference
-
-Arguments enclosed in `[brackets]` are user-defined placeholders.
-
-| Command | Usage | Description |
-| :--- | :--- | :--- |
-| `daemon` | `oss-indexer daemon [--interval 15m] [--port 43770] [--pull]` | **Primary mode**: Starts the Web Dashboard, HTTP MCP server, and background Git auto-pull watcher. |
-| `onboard` | `oss-indexer onboard [workspace_path] [-p project_id] [-m mode]` | **Atomic workflow**: Scans directory, generates `registry.yaml`, and batch-indexes all repositories. |
-| `scan` | `oss-indexer scan [workspace_path] [-o registry.yaml] [-p project_id]` | Scans directory up to depth 4, detects microservices/ports, and saves `registry.yaml`. |
-| `index` | `oss-indexer index [-r path/to/registry.yaml] [-p project_id] [--pull]` | Triggers batch AST indexing for all repositories in the registry. |
-| `status` | `oss-indexer status` | Displays daemon health, indexed repository counts, and recent run logs. |
-| `remove` | `oss-indexer remove [project_id_or_path] [--no-purge-graphs]` | Decommissions project, unregisters from catalog, and purges graph DBs. |
-| `run` | `oss-indexer run [--port 43770] [--stdio]` | Runs standalone MCP server via HTTP or standard I/O. |
-
----
-
-## 🤖 AI Agent & MCP Setup
-
-`oss-indexer` exposes standard [Model Context Protocol](https://modelcontextprotocol.io/) tools over Streamable HTTP (`http://localhost:43770/mcp`) or Stdio.
-
-### Connect to Claude Desktop / Cursor / Antigravity IDE
-
-Add `oss-indexer` to your `mcp.json` or `claude_desktop_config.json`:
-
-#### HTTP Stream Transport (Recommended with Daemon)
 ```json
 {
   "mcpServers": {
@@ -208,7 +137,12 @@ Add `oss-indexer` to your `mcp.json` or `claude_desktop_config.json`:
 }
 ```
 
-#### Stdio Transport (Direct Executable)
+### 2. Claude Desktop
+
+Add `oss-indexer` to your `claude_desktop_config.json`:
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+
 ```json
 {
   "mcpServers": {
@@ -220,27 +154,178 @@ Add `oss-indexer` to your `mcp.json` or `claude_desktop_config.json`:
 }
 ```
 
-### Available MCP Tools
+### 3. Antigravity IDE / Cline
 
-| MCP Tool | Type | Inputs | Description |
-| :--- | :---: | :--- | :--- |
-| `get_architecture_overview` | `Read` | `project?` | Complete ecosystem topology: repos, tech stacks, ports, and inter-service edges. |
-| `get_repo_details` | `Read` | `repo_name`, `project?` | Metadata, AST index status, node/edge counts, and inbound/outbound calls for a repo. |
-| `get_related_repos` | `Read` | `repo_name`, `direction?` | Lists upstream callers (`inbound`), downstream dependencies (`outbound`), or `all`. |
-| `list_projects` | `Read` | `project?` | Lists all registered projects in the catalog and active AST graph databases. |
-| `check_project_status` | `Read` | `project?` | Freshness report showing manifest validity and per-repo indexing freshness. |
-| `trigger_index` | `Write` | `project?`, `repo_name?`, `mode?`, `pull?` | Triggers immediate re-indexing for a whole project or a single repository. |
-| `scan_and_create_registry` | `Write` | `workspace_path`, `output_file?` | Discovers microservices in a folder and saves `registry.yaml`. |
-| `onboard_workspace` | `Write` | `workspace_path`, `project_id?`, `mode?` | Composite tool: scan $\rightarrow$ save manifest $\rightarrow$ batch index. |
-| `remove_project` | `Write` | `project`, `purge_graphs?` | Decommissions project and cleans up disk artifacts. |
+In your workspace or global settings `mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "oss-indexer": {
+      "url": "http://127.0.0.1:43770/mcp"
+    }
+  }
+}
+```
+
+> [!TIP]
+> **Securing with Auth Token**: If you set `OSS_INDEXER_AUTH_TOKEN=your-secret-token` in your environment, pass it in your MCP config under `headers`:
+> ```json
+> "headers": {
+>   "Authorization": "Bearer your-secret-token"
+> }
+> ```
 
 ---
 
-## 🐳 Production Deployment
+## 🛠️ MCP Tools Reference & AI Prompt Examples
 
-### 1. Docker & Docker Compose (Build from Source)
+Once connected, your AI assistant can call any of the following 9 tools autonomously:
 
-#### Using Docker Compose (Recommended)
+| MCP Tool | Access | Key Parameters | Description |
+| :--- | :---: | :--- | :--- |
+| `get_architecture_overview` | `Read` | `project?` | Returns full workspace topology: services, languages, ports, and inter-service edges. |
+| `get_repo_details` | `Read` | `repo_name`, `project?` | Returns deep service metadata, AST index status, node/edge counts, and inbound/outbound links. |
+| `get_related_repos` | `Read` | `repo_name`, `direction?` | Finds upstream callers (`inbound`), downstream dependencies (`outbound`), or `all`. |
+| `list_projects` | `Read` | `project?` | Lists all registered projects in the catalog and active AST graph databases. |
+| `check_project_status` | `Read` | `project?` | Freshness report detailing manifest integrity and per-repo index staleness. |
+| `trigger_index` | `Write` | `project?`, `repo_name?`, `pull?` | Triggers immediate AST indexing (with optional `git pull`) for a whole project or one service. |
+| `scan_and_create_registry` | `Write` | `workspace_path`, `output_file?` | Discovers microservices in a folder and saves declarative `registry.yaml`. |
+| `onboard_workspace` | `Write` | `workspace_path`, `project_id?` | Atomic pipeline: scan directory $\rightarrow$ register project $\rightarrow$ batch index into AST. |
+| `remove_project` | `Write` | `project`, `purge_graphs?` | Decommissions a project from the catalog and cleans up cache graph files. |
+
+### Real-World AI Prompts to Try:
+
+- **Topology Discovery**:  
+  > *"Explain the architecture of this workspace. What services are running and what ports do they use?"*  
+  *(AI calls `get_architecture_overview`)*
+
+- **Tracing Dependencies**:  
+  > *"Which services invoke the payment-service? If I change its API contracts, what breaks?"*  
+  *(AI calls `get_related_repos(repo_name="payment-service", direction="inbound")`)*
+
+- **Freshness Check**:  
+  > *"Check if my microservices are up-to-date in the AST knowledge graph."*  
+  *(AI calls `check_project_status`)*
+
+- **Auto-Onboarding**:  
+  > *"Scan the directory `C:\Telkom\my-microservices` and onboard it into the catalog."*  
+  *(AI calls `onboard_workspace(workspace_path="C:\\Telkom\\my-microservices")`)*
+
+---
+
+## 📋 Web Dashboard Guide
+
+### 1. Active Project Controls
+- **Project Selector**: Easily switch between registered microservice ecosystems directly above the stats cards.
+- **Project GitHub Button**: Click the GitHub badge next to the dropdown (`[ 🐙 owner/repo ↗ ]`) to jump directly to the root repository on GitHub.
+- **Scan New Project (`Browse...`)**: Click **Scan New Project** and use the **Browse...** button to open the native OS folder picker (Windows Explorer, macOS, or Linux).
+
+### 2. Project-Focused KPI Cards
+Directly below the action bar are 4 real-time cards focused 100% on the active project:
+1. **Total Services**: Total microservices detected, with subtext displaying the variety of detected tech stacks.
+2. **Index Coverage**: Knowledge graph indexing completeness (e.g. `6 / 8` with percentage indicator).
+3. **Total Nodes**: Total AST entities and call graph edges indexed in Codebase Memory.
+4. **Service Connections**: Total inter-service network links, routes, and dependencies.
+
+### 3. Interactive Whiteboard Topology Map
+- **Visual Legend**:
+  - `Indexed AST`: Green circular ring with hollow center.
+  - `Unindexed`: Blue circular ring with hollow center.
+  - `Gateway Route`: Solid blue directional arrow `──▶`
+  - `Service Registry`: Dashed purple directional arrow `┈┈▶`
+  - `API Call`: Dashed cyan directional arrow `┈┈▶`
+- **Curved Quadratic Arcs**: Overlapping or bidirectional routes automatically curve into distinct Bezier arcs so no lines stack.
+- **Inspect Service**: Click any node on the whiteboard or card in the catalog to view inbound/outbound calls, ports, tech stacks, and trigger single-service re-indexing.
+
+### 4. Service Catalog with Origin Tracing
+- Each service displays its tech stack tags, listening port, and a clickable Git source badge:
+  - `Root: owner/repo` (for monorepo services)
+  - `Service: owner/repo` (for independent service repos)
+- Long repository names automatically truncate with an **ellipsis (`...`)** to maintain a clean card grid layout.
+
+---
+
+## 🔒 Private Repositories & Git Sync
+
+When you click **"Git Pull & Sync All"** on the dashboard or trigger `pull: true` via MCP:
+
+1. **How Git Pull Works**:
+   - `oss-indexer` executes the native `git` CLI on your machine.
+   - It pulls the **workspace root** (if monorepo) and every **microservice subfolder** (if multi-repo or submodules).
+   - Once pulled, it parses modified files and updates AST graphs automatically.
+
+2. **Authenticating with Private GitHub Repositories**:
+   Since `oss-indexer` uses your local Git CLI, it **automatically inherits your existing Git credentials**:
+   - **Windows Git Credential Manager (GCM)**: If you have already authenticated in Windows Terminal, credentials stored in the Windows Credential Store are used automatically with zero extra setup.
+   - **SSH Keys (`git@github.com:...`)**: If your repo remotes use SSH, Git automatically uses your local `~/.ssh/id_ed25519` or `~/.ssh/id_rsa`.
+   - **GitHub CLI (`gh`)**: Run `gh auth login` and `gh auth setup-git` to configure Git credentials machine-wide.
+   - **Personal Access Token (PAT)**: Set your remote URL to `https://<TOKEN>@github.com/owner/repo.git`.
+
+> [!NOTE]
+> **Non-Interactive Protection**: `oss-indexer` runs with `GIT_TERMINAL_PROMPT=0`. If authentication credentials are missing, Git will **never hang** waiting for hidden terminal inputs; it immediately reports a clean warning in the **Ingestion & Daemon Activity** log.
+
+---
+
+## 🛠️ CLI Reference
+
+```text
+Usage: oss-indexer [command] [options]
+```
+
+| Command | Usage | Description |
+| :--- | :--- | :--- |
+| `daemon` | `oss-indexer daemon [--interval 15m] [--port 43770] [--pull]` | **Primary mode**: Launches Web Dashboard, HTTP MCP server, and Git watcher. |
+| `onboard` | `oss-indexer onboard [path] [-p project_id] [-m mode]` | Scans folder, generates `registry.yaml`, and batch-indexes all repositories. |
+| `scan` | `oss-indexer scan [path] [-o registry.yaml] [-p project_id]` | Inspects directory up to depth 4, detects services/ports, and outputs YAML. |
+| `index` | `oss-indexer index [-r path/to/registry.yaml] [-p project_id] [--pull]` | Triggers AST knowledge graph indexing for all repositories in the registry. |
+| `status` | `oss-indexer status` | Displays daemon health, indexed repository counts, and recent index run logs. |
+| `remove` | `oss-indexer remove [project_id] [--no-purge-graphs]` | Unregisters a project from catalog and optionally deletes AST SQLite files. |
+| `run` | `oss-indexer run [--port 43770] [--stdio]` | Runs standalone MCP server via HTTP or Stdio without dashboard. |
+
+---
+
+## 📄 Manifest Schema (`registry.yaml`)
+
+Every scanned workspace produces a declarative manifest `registry.yaml`:
+
+```yaml
+project_id: bank-microservices
+name: bank-microservices
+description: Core banking and payment processing services
+git_url: https://github.com/Abbilville/bank-microservices
+source_path: C:\Projects\bank-microservices\registry.yaml
+
+repos:
+  - name: gateway-service
+    local_path: ./services/gateway-service
+    tech_stack: [Java, Spring Boot, Spring Cloud Gateway]
+    entry_point: GatewayApplication.java
+    port: 8888
+    git_url: https://github.com/Abbilville/bank-microservices/tree/main/services/gateway-service
+    git_origin: root
+
+  - name: account-service
+    local_path: ./services/account-service
+    tech_stack: [Node.js, Express, PostgreSQL]
+    entry_point: src/server.js
+    port: 4000
+    git_url: https://github.com/Abbilville/bank-microservices/tree/main/services/account-service
+    git_origin: root
+
+relationships:
+  - source: gateway-service
+    target: account-service
+    type: routes_to
+    description: API Gateway routes incoming client traffic to account-service
+```
+
+---
+
+## 🐳 Docker & Container Deployment
+
+### Docker Compose (Recommended)
+
 `docker-compose.yml`:
 ```yaml
 services:
@@ -265,161 +350,9 @@ volumes:
   oss-indexer-config:
 ```
 
-Build and start the container:
 ```bash
-# Build image from local Dockerfile and start in background
 docker compose up --build -d
-
-# View live indexing and daemon logs
 docker compose logs -f
-```
-
-#### Using Plain Docker CLI
-```bash
-# 1. Build Docker image locally
-docker build -t oss-indexer .
-
-# 2. Run container on port 43770
-docker run -d --name oss-indexer -p 43770:43770 oss-indexer
-```
-
----
-
-### 2. Linux Systemd Service (Bare Metal / VM)
-
-To run `oss-indexer` as a permanent background service on Linux:
-
-1. Build and copy the binary:
-   ```bash
-   go build -o /usr/local/bin/oss-indexer ./cmd/oss-indexer
-   ```
-
-2. Create `/etc/systemd/system/oss-indexer.service`:
-   ```ini
-   [Unit]
-   Description=oss-indexer Microservice Hub & Daemon
-   After=network.target
-
-   [Service]
-   Type=simple
-   User=root
-   WorkingDirectory=/root
-   ExecStart=/usr/local/bin/oss-indexer daemon --port 43770 --interval 15m --pull
-   Restart=always
-   RestartSec=5
-   Environment=PORT=43770
-   Environment=OSS_INDEXER_AUTH_TOKEN=your-secret-token
-
-   [Install]
-   WantedBy=multi-user.target
-   ```
-
-3. Enable and start:
-   ```bash
-   sudo systemctl daemon-reload
-   sudo systemctl enable --now oss-indexer
-   sudo systemctl status oss-indexer
-   ```
-
----
-
-### 3. Reverse Proxy with Nginx & SSL (HTTPS + SSE)
-
-When running behind Nginx, ensure **Server-Sent Events (SSE)** buffering is disabled so live real-time logs stream smoothly:
-
-```nginx
-server {
-    listen 80;
-    server_name topology.yourdomain.com;
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name topology.yourdomain.com;
-
-    ssl_certificate /etc/letsencrypt/live/topology.yourdomain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/topology.yourdomain.com/privkey.pem;
-
-    location / {
-        proxy_pass http://127.0.0.1:43770;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        # Crucial for SSE Live Progress Streaming (/api/events)
-        proxy_set_header Connection '';
-        proxy_http_version 1.1;
-        chunked_transfer_encoding off;
-        proxy_buffering off;
-        proxy_cache off;
-    }
-}
-```
-
----
-
-## ⚙️ Configuration & Environment Variables
-
-Create a `.env` file or export environment variables:
-
-```env
-# HTTP Port for Web Dashboard & MCP Server (Default: 43770)
-PORT=43770
-
-# Optional Secret Token for securing API and Dashboard
-# If set, incoming requests must supply "Authorization: Bearer <token>" or "X-API-Key: <token>"
-OSS_INDEXER_AUTH_TOKEN=
-
-# Optional custom path for the machine-wide projects catalog (Default: ~/.config/oss-mcp/projects.yaml)
-# MCP_PROJECTS_CATALOG=
-
-# Optional fallback path to a custom registry.yaml
-# MCP_REGISTRY_PATH=
-```
-
----
-
-## 📄 Manifest Schema (`registry.yaml`)
-
-Every scanned or onboarded project produces a declarative `registry.yaml`:
-
-```yaml
-project_id: bank-microservices
-name: bank-microservices Ecosystem
-description: Core banking and payment processing services
-source_path: /path/to/bank/registry.yaml
-
-repos:
-  - name: gateway-service
-    local_path: ./services/gateway-service
-    tech_stack: [Java, Spring Boot, Spring Cloud Gateway]
-    entry_point: GatewayApplication.java
-    port: 8888
-
-  - name: account-service
-    local_path: ./services/account-service
-    tech_stack: [Java, Spring Boot, PostgreSQL, Maven]
-    entry_point: AccountApplication.java
-    port: 8884
-
-  - name: discovery-service
-    local_path: ./services/discovery-service
-    tech_stack: [Java, Spring Boot, Netflix Eureka]
-    entry_point: EurekaApplication.java
-    port: 8761
-
-relationships:
-  - source: gateway-service
-    target: account-service
-    type: routes_to
-    description: API Gateway routes incoming client traffic to account-service
-
-  - source: account-service
-    target: discovery-service
-    type: registers_with
-    description: account-service registers with Eureka discovery service on port 8761
 ```
 
 ---
@@ -427,24 +360,24 @@ relationships:
 ## ❓ FAQ & Troubleshooting
 
 <details>
-<summary><strong>Q: Why do my microservices show "0 AST nodes" before indexing?</strong></summary>
+<summary><strong>Q: Why do my microservices show "Not indexed" or "0 AST nodes"?</strong></summary>
 
-AST nodes and call graph edges are generated when repositories are ingested into `codebase-memory-mcp`. Click **"Batch Re-index Project"** in the Action Center (or run `oss-indexer index`) to ingest all repositories into AST knowledge graphs. Once indexed, the dashboard reads the exact counts directly from SQLite.
+AST nodes and call graph edges are populated when repositories are ingested into `codebase-memory-mcp`. Click **"Re-index Projects"** in the Action Center (or run `oss-indexer index`) to ingest all repositories into AST knowledge graphs. Once indexed, the dashboard reads the exact counts directly from SQLite.
 </details>
 
 <details>
 <summary><strong>Q: How do I change the default port from 43770?</strong></summary>
 
-You can specify `--port` in the CLI or set `PORT=5000` in your environment / `.env`:
+Specify `--port` in the CLI or set `PORT=5000` in your environment or `.env`:
 ```bash
 oss-indexer daemon --port 5000
 ```
 </details>
 
 <details>
-<summary><strong>Q: Can I run multiple projects in the same dashboard?</strong></summary>
+<summary><strong>Q: Can I manage multiple microservice projects simultaneously?</strong></summary>
 
-Yes! Every project you scan or onboard is automatically registered in `~/.config/oss-mcp/projects.yaml`. Use the dropdown selector in the top navigation bar to seamlessly switch between different workspaces and microservice ecosystems.
+Yes! Every project scanned or onboarded is registered in `~/.config/oss-mcp/projects.yaml`. Use the **Project dropdown** in the action bar to switch between workspaces instantly.
 </details>
 
 ---
