@@ -1,6 +1,7 @@
 package graphmeta
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
@@ -75,6 +76,7 @@ func GetRepoIndexInfo(repoPath string, repoName string, cached []CbmCacheItem) R
 type RepoStatusDetail struct {
 	Name        string   `json:"name"`
 	LocalPath   string   `json:"local_path"`
+	Description string   `json:"description,omitempty"`
 	TechStack   []string `json:"tech_stack,omitempty"`
 	Port        *int     `json:"port,omitempty"`
 	IsIndexed   bool     `json:"is_indexed"`
@@ -82,6 +84,8 @@ type RepoStatusDetail struct {
 	IndexEdges  *int     `json:"index_edges,omitempty"`
 	IndexedAt   *string  `json:"indexed_at,omitempty"`
 	Source      string   `json:"source,omitempty"`
+	GitURL      string   `json:"git_url,omitempty"`
+	GitOrigin   string   `json:"git_origin,omitempty"` // "root" or "service"
 }
 
 // ProjectStatusReport represents a complete health & freshness report for a project ecosystem.
@@ -89,6 +93,7 @@ type ProjectStatusReport struct {
 	ProjectID          string                      `json:"project_id"`
 	ProjectName        string                      `json:"project_name"`
 	Description        string                      `json:"description,omitempty"`
+	GitURL             string                      `json:"git_url,omitempty"`
 	SourcePath         string                      `json:"source_path,omitempty"`
 	TotalRepos         int                         `json:"total_repos"`
 	IndexedRepos       int                         `json:"indexed_repos"`
@@ -113,10 +118,51 @@ func CheckProjectStatus(reg *registry.ProjectRegistry) ProjectStatusReport {
 		baseDir = filepath.Dir(reg.SourcePath)
 	}
 
+	rootGitURL := reg.GitURL
+	if rootGitURL == "" && baseDir != "" {
+		rootGitURL = scanner.GetGitRemoteURL(baseDir)
+	}
+	if rootGitURL == "" {
+		for _, repo := range reg.Repos {
+			if repo.LocalPath != "" {
+				p := repo.LocalPath
+				if !filepath.IsAbs(p) && baseDir != "" {
+					p = filepath.Join(baseDir, p)
+				}
+				if g := scanner.GetGitRemoteURL(filepath.Dir(p)); g != "" {
+					rootGitURL = g
+					break
+				}
+			}
+		}
+	}
+
 	for _, repo := range reg.Repos {
 		fullPath := repo.LocalPath
 		if fullPath != "" && !filepath.IsAbs(fullPath) && baseDir != "" {
 			fullPath = filepath.Join(baseDir, fullPath)
+		}
+
+		gitURL := repo.GitURL
+		gitOrigin := repo.GitOrigin
+		if gitURL == "" && fullPath != "" {
+			svcGit := scanner.GetGitRemoteURL(fullPath)
+			if svcGit != "" && svcGit != rootGitURL {
+				gitURL = svcGit
+				gitOrigin = "service"
+			} else if rootGitURL != "" {
+				gitOrigin = "root"
+				if baseDir != "" {
+					rel, err := filepath.Rel(baseDir, fullPath)
+					if err == nil && rel != "." && rel != "" {
+						gitURL = fmt.Sprintf("%s/tree/main/%s", rootGitURL, strings.ReplaceAll(rel, "\\", "/"))
+					} else {
+						gitURL = rootGitURL
+					}
+				} else {
+					gitURL = rootGitURL
+				}
+			}
 		}
 
 		idx := GetRepoIndexInfo(fullPath, repo.Name, cached)
@@ -131,15 +177,18 @@ func CheckProjectStatus(reg *registry.ProjectRegistry) ProjectStatusReport {
 		}
 
 		details = append(details, RepoStatusDetail{
-			Name:       repo.Name,
-			LocalPath:  repo.LocalPath,
-			TechStack:  repo.TechStack,
-			Port:       repo.Port,
-			IsIndexed:  idx.IsIndexed,
-			IndexNodes: idx.IndexNodes,
-			IndexEdges: idx.IndexEdges,
-			IndexedAt:  idx.IndexedAt,
-			Source:     idx.Source,
+			Name:        repo.Name,
+			LocalPath:   repo.LocalPath,
+			Description: repo.Description,
+			TechStack:   repo.TechStack,
+			Port:        repo.Port,
+			IsIndexed:   idx.IsIndexed,
+			IndexNodes:  idx.IndexNodes,
+			IndexEdges:  idx.IndexEdges,
+			IndexedAt:   idx.IndexedAt,
+			Source:      idx.Source,
+			GitURL:      gitURL,
+			GitOrigin:   gitOrigin,
 		})
 	}
 
@@ -156,6 +205,7 @@ func CheckProjectStatus(reg *registry.ProjectRegistry) ProjectStatusReport {
 		ProjectID:          reg.ProjectID,
 		ProjectName:        reg.Name,
 		Description:        reg.Description,
+		GitURL:             rootGitURL,
 		SourcePath:         reg.SourcePath,
 		TotalRepos:         len(reg.Repos),
 		IndexedRepos:       indexedCount,

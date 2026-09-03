@@ -64,11 +64,102 @@ var pythonLibMap = map[string]string{
 	"langchain":    "LangChain",
 }
 
+// CleanGitURL converts git SSH or HTTPS URLs into standard https URLs without .git suffix.
+func CleanGitURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	raw = strings.TrimPrefix(raw, "git+")
+	// Handle git@github.com:owner/repo.git
+	if strings.HasPrefix(raw, "git@") {
+		parts := strings.SplitN(raw, ":", 2)
+		if len(parts) == 2 {
+			host := strings.TrimPrefix(parts[0], "git@")
+			path := strings.TrimSuffix(parts[1], ".git")
+			return fmt.Sprintf("https://%s/%s", host, path)
+		}
+	}
+	// Handle ssh://git@github.com/owner/repo.git
+	if strings.HasPrefix(raw, "ssh://git@") {
+		raw = "https://" + strings.TrimPrefix(raw, "ssh://git@")
+	}
+	clean := strings.TrimSuffix(raw, ".git")
+	if strings.HasPrefix(clean, "http://") || strings.HasPrefix(clean, "https://") {
+		return clean
+	}
+	// Handle github:owner/repo shorthand
+	if strings.HasPrefix(clean, "github:") {
+		return "https://github.com/" + strings.TrimPrefix(clean, "github:")
+	}
+	return clean
+}
+
+// GetGitRemoteURL inspects dir for a git remote origin URL by reading .git/config.
+func GetGitRemoteURL(dir string) string {
+	if dir == "" {
+		return ""
+	}
+
+	gitPath := filepath.Join(dir, ".git")
+	stat, err := os.Stat(gitPath)
+	if err != nil {
+		return ""
+	}
+
+	gitConfigPath := filepath.Join(gitPath, "config")
+	// Handle git worktree or submodule where .git is a file containing "gitdir: ..."
+	if !stat.IsDir() {
+		data, err := os.ReadFile(gitPath)
+		if err == nil {
+			line := strings.TrimSpace(string(data))
+			if strings.HasPrefix(line, "gitdir:") {
+				realDir := strings.TrimSpace(strings.TrimPrefix(line, "gitdir:"))
+				if !filepath.IsAbs(realDir) {
+					realDir = filepath.Join(dir, realDir)
+				}
+				gitConfigPath = filepath.Join(realDir, "config")
+			}
+		}
+	}
+
+	content, err := os.ReadFile(gitConfigPath)
+	if err != nil {
+		return ""
+	}
+
+	lines := strings.Split(string(content), "\n")
+	inOrigin := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[remote ") {
+			inOrigin = strings.Contains(trimmed, "\"origin\"") || strings.Contains(trimmed, "origin")
+			continue
+		}
+		if inOrigin && strings.HasPrefix(trimmed, "url =") {
+			raw := strings.TrimSpace(strings.TrimPrefix(trimmed, "url ="))
+			return CleanGitURL(raw)
+		}
+	}
+
+	// Fallback: search for any remote url if origin section header differed
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "url =") {
+			raw := strings.TrimSpace(strings.TrimPrefix(trimmed, "url ="))
+			return CleanGitURL(raw)
+		}
+	}
+
+	return ""
+}
+
 type scannedRepoData struct {
 	Name        string
 	TechStack   []string
 	EntryPoint  string
 	Description string
+	GitURL      string
 }
 
 func scanPackageJSON(repoDir string) *scannedRepoData {
@@ -84,9 +175,19 @@ func scanPackageJSON(repoDir string) *scannedRepoData {
 		Description     string            `json:"description"`
 		Dependencies    map[string]string `json:"dependencies"`
 		DevDependencies map[string]string `json:"devDependencies"`
+		Repository      any               `json:"repository"`
 	}
 	if err := json.Unmarshal(data, &pkg); err != nil {
 		return nil
+	}
+
+	pkgGitURL := ""
+	if repoStr, ok := pkg.Repository.(string); ok {
+		pkgGitURL = CleanGitURL(repoStr)
+	} else if repoMap, ok := pkg.Repository.(map[string]any); ok {
+		if urlVal, ok := repoMap["url"].(string); ok {
+			pkgGitURL = CleanGitURL(urlVal)
+		}
 	}
 
 	name := pkg.Name
@@ -129,6 +230,7 @@ func scanPackageJSON(repoDir string) *scannedRepoData {
 		TechStack:   techStack,
 		EntryPoint:  entryPoint,
 		Description: pkg.Description,
+		GitURL:      pkgGitURL,
 	}
 }
 
@@ -349,6 +451,8 @@ func ScanWorkspace(targetDir string, projectID string) (*registry.ProjectRegistr
 		return nil, fmt.Errorf("workspace directory not found: %s", absDir)
 	}
 
+	rootGitURL := GetGitRemoteURL(absDir)
+
 	var repos []registry.RepoInfo
 	visited := make(map[string]bool)
 
@@ -363,6 +467,26 @@ func ScanWorkspace(targetDir string, projectID string) (*registry.ProjectRegistr
 		if dir != absDir {
 			if match := matchRepo(dir); match != nil {
 				port := InferPort(dir)
+
+				serviceGitURL := GetGitRemoteURL(dir)
+				gitURL := ""
+				gitOrigin := ""
+				if serviceGitURL != "" && serviceGitURL != rootGitURL {
+					gitURL = serviceGitURL
+					gitOrigin = "service"
+				} else if rootGitURL != "" {
+					gitOrigin = "root"
+					relPath, err := filepath.Rel(absDir, dir)
+					if err == nil && relPath != "." && relPath != "" {
+						gitURL = fmt.Sprintf("%s/tree/main/%s", rootGitURL, strings.ReplaceAll(relPath, "\\", "/"))
+					} else {
+						gitURL = rootGitURL
+					}
+				} else if match.GitURL != "" {
+					gitURL = match.GitURL
+					gitOrigin = "service"
+				}
+
 				repos = append(repos, registry.RepoInfo{
 					Name:        match.Name,
 					LocalPath:   strings.ReplaceAll(dir, "\\", "/"),
@@ -370,6 +494,8 @@ func ScanWorkspace(targetDir string, projectID string) (*registry.ProjectRegistr
 					TechStack:   match.TechStack,
 					EntryPoint:  match.EntryPoint,
 					Port:        port,
+					GitURL:      gitURL,
+					GitOrigin:   gitOrigin,
 				})
 				return // Found a service, do not descend deeper inside its code tree
 			}
@@ -395,6 +521,14 @@ func ScanWorkspace(targetDir string, projectID string) (*registry.ProjectRegistr
 	if len(repos) == 0 {
 		if selfMatch := matchRepo(absDir); selfMatch != nil {
 			port := InferPort(absDir)
+			gitURL := rootGitURL
+			gitOrigin := ""
+			if gitURL != "" {
+				gitOrigin = "root"
+			} else if selfMatch.GitURL != "" {
+				gitURL = selfMatch.GitURL
+				gitOrigin = "service"
+			}
 			repos = append(repos, registry.RepoInfo{
 				Name:        selfMatch.Name,
 				LocalPath:   strings.ReplaceAll(absDir, "\\", "/"),
@@ -402,6 +536,8 @@ func ScanWorkspace(targetDir string, projectID string) (*registry.ProjectRegistr
 				TechStack:   selfMatch.TechStack,
 				EntryPoint:  selfMatch.EntryPoint,
 				Port:        port,
+				GitURL:      gitURL,
+				GitOrigin:   gitOrigin,
 			})
 		}
 	}
@@ -417,6 +553,7 @@ func ScanWorkspace(targetDir string, projectID string) (*registry.ProjectRegistr
 		ProjectID:     pID,
 		Name:          fmt.Sprintf("%s Ecosystem", pID),
 		Description:   fmt.Sprintf("Auto-scanned project at %s", absDir),
+		GitURL:        rootGitURL,
 		Repos:         repos,
 		Relationships: relationships,
 		SourcePath:    filepath.Join(absDir, "registry.yaml"),
