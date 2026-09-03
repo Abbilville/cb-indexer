@@ -36,17 +36,26 @@
       </div>
       <div class="brand-text">
         <h1 style="font-family: 'Outfit', sans-serif;">oss-indexer</h1>
-        <p id="header-subtitle">Multi-Repo Topology & Ingestion Hub</p>
+        <div style="display:flex; align-items:center; gap:6px; margin-top:2px;">
+          <div class="nav-project-badge" id="nav-project-badge" title="Active Project ID">
+            <span class="project-dot"></span>
+            <span id="nav-project-id">Loading...</span>
+          </div>
+          <a id="nav-github-link" href="#" target="_blank" rel="noopener noreferrer" class="nav-github-badge" title="Open Project GitHub Repository" style="display:none;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+            </svg>
+            <span id="nav-github-text">GitHub</span>
+          </a>
+        </div>
       </div>
     </div>
 
     <div class="header-controls">
-      <!-- Project Selector -->
-      <div class="select-wrapper">
-        <select id="project-selector" aria-label="Select Project">
-          <option value="">Loading projects...</option>
-        </select>
-        <span class="select-arrow">▼</span>
+      <!-- Live Daemon Status Pill -->
+      <div class="daemon-pill daemon-active" id="header-daemon-status" title="Ingestion daemon status">
+        <span class="pulse-dot pulse-green"></span>
+        <span id="header-daemon-text">Daemon Active</span>
       </div>
 
       <!-- Auth Key Modal Trigger -->
@@ -72,38 +81,74 @@
     </div>
   </header>
 
-  <!-- Hero Statistics Bar -->
+  <!-- Top Action Bar above Active Projects -->
+  <div class="stats-action-bar">
+    <div class="project-picker-container">
+      <label for="project-selector" class="project-picker-label">Project:</label>
+      <div class="select-wrapper">
+        <select id="project-selector" aria-label="Select Project">
+          <option value="">Loading projects...</option>
+        </select>
+        <span class="select-arrow">▼</span>
+      </div>
+      <a id="project-github-link" href="#" target="_blank" rel="noopener noreferrer" class="project-github-btn" title="Open Project GitHub Repository" style="display:none;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+        </svg>
+        <span id="project-github-label">GitHub</span>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:1px; opacity:0.7;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+      </a>
+    </div>
+
+    <button class="btn btn-primary" id="btn-open-scan" title="Scan and register a new project workspace">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <span>Scan New Project</span>
+    </button>
+  </div>
+
+  <!-- Hero Statistics Bar (100% Project Focused) -->
   <section class="hero-stats">
+    <!-- Card 1: Total Services -->
     <div class="stat-card">
       <div class="stat-icon icon-blue">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
           stroke-linecap="round" stroke-linejoin="round">
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+          <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+          <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+          <line x1="6" y1="6" x2="6.01" y2="6"></line>
+          <line x1="6" y1="18" x2="6.01" y2="18"></line>
         </svg>
       </div>
       <div class="stat-info">
-        <div class="stat-label">Active Projects</div>
-        <div class="stat-value" id="stat-projects">-</div>
+        <div class="stat-label">Total Services</div>
+        <div class="stat-value" id="stat-services">-</div>
+        <div class="stat-sub" id="stat-services-sub">Registered services</div>
       </div>
     </div>
 
-    <div class="stat-card">
-      <div class="stat-icon icon-purple">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-          stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
-          <polyline points="2 17 12 22 22 17"></polyline>
-          <polyline points="2 12 12 17 22 12"></polyline>
-        </svg>
-      </div>
-      <div class="stat-info">
-        <div class="stat-label">Repositories</div>
-        <div class="stat-value" id="stat-repos">-</div>
-      </div>
-    </div>
-
+    <!-- Card 2: Index Coverage -->
     <div class="stat-card">
       <div class="stat-icon icon-emerald">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+          <polyline points="22 4 12 14.01 9 11.01"></polyline>
+        </svg>
+      </div>
+      <div class="stat-info">
+        <div class="stat-label">Index Coverage</div>
+        <div class="stat-value" id="stat-coverage">-</div>
+        <div class="stat-sub" id="stat-coverage-sub">Knowledge graph</div>
+      </div>
+    </div>
+
+    <!-- Card 3: Total Nodes -->
+    <div class="stat-card">
+      <div class="stat-icon icon-purple">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
           stroke-linecap="round" stroke-linejoin="round">
           <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
@@ -119,25 +164,28 @@
         </svg>
       </div>
       <div class="stat-info">
-        <div class="stat-label">Indexed AST Nodes</div>
+        <div class="stat-label">Total Nodes</div>
         <div class="stat-value" id="stat-nodes">-</div>
+        <div class="stat-sub" id="stat-nodes-sub">AST code entities</div>
       </div>
     </div>
 
+    <!-- Card 4: Service Connections -->
     <div class="stat-card">
-      <div class="stat-icon icon-amber">
+      <div class="stat-icon icon-cyan">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
           stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+          <circle cx="18" cy="5" r="3"></circle>
+          <circle cx="6" cy="12" r="3"></circle>
+          <circle cx="18" cy="19" r="3"></circle>
+          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+          <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
         </svg>
       </div>
       <div class="stat-info">
-        <div class="stat-label">Daemon Health</div>
-        <div class="stat-value" id="stat-daemon">
-          <span style="display:inline-flex; align-items:center; gap:6px; font-size:1rem;">
-            <span class="pulse-dot pulse-green"></span> Active
-          </span>
-        </div>
+        <div class="stat-label">Service Connections</div>
+        <div class="stat-value" id="stat-connections">-</div>
+        <div class="stat-sub" id="stat-connections-sub">Topology links</div>
       </div>
     </div>
   </section>
@@ -184,11 +232,35 @@
           </div>
 
           <div class="graph-legend">
-            <div class="legend-item"><span class="legend-dot" style="background:#10b981;"></span> Indexed AST</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#3b82f6;"></span> Unindexed</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#60a5fa;"></span> Gateway Route</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#a855f7;"></span> Discovery Reg</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#06b6d4;"></span> API Call</div>
+            <div class="legend-item"><span class="legend-node-ring legend-node-indexed"></span> Indexed AST</div>
+            <div class="legend-item"><span class="legend-node-ring legend-node-unindexed"></span> Unindexed</div>
+            <div class="legend-item">
+              <span class="legend-arrow">
+                <svg width="18" height="10" viewBox="0 0 18 10">
+                  <line x1="1" y1="5" x2="12" y2="5" stroke="#60a5fa" stroke-width="2" />
+                  <polygon points="11 2, 17 5, 11 8" fill="#60a5fa" />
+                </svg>
+              </span>
+              Gateway Route
+            </div>
+            <div class="legend-item">
+              <span class="legend-arrow">
+                <svg width="18" height="10" viewBox="0 0 18 10">
+                  <line x1="1" y1="5" x2="12" y2="5" stroke="#a855f7" stroke-width="2" stroke-dasharray="3,2" />
+                  <polygon points="11 2, 17 5, 11 8" fill="#a855f7" />
+                </svg>
+              </span>
+              Service Registry
+            </div>
+            <div class="legend-item">
+              <span class="legend-arrow">
+                <svg width="18" height="10" viewBox="0 0 18 10">
+                  <line x1="1" y1="5" x2="12" y2="5" stroke="#06b6d4" stroke-width="2" stroke-dasharray="3,2" />
+                  <polygon points="11 2, 17 5, 11 8" fill="#06b6d4" />
+                </svg>
+              </span>
+              API Call
+            </div>
           </div>
         </div>
       </section>
@@ -249,7 +321,7 @@
               stroke-linecap="round" stroke-linejoin="round">
               <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
             </svg>
-            <span>Batch Re-index Project</span>
+            <span>Re-index Projects</span>
           </button>
           <button class="btn btn-secondary action-btn" id="btn-pull-reindex">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -257,14 +329,6 @@
               <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
             </svg>
             <span>Git Pull & Sync All</span>
-          </button>
-          <button class="btn btn-secondary action-btn" id="btn-open-scan">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-              stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="11" cy="11" r="8"></circle>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-            </svg>
-            <span>Scan New Workspace</span>
           </button>
         </div>
       </section>
@@ -302,7 +366,7 @@
             <circle cx="11" cy="11" r="8"></circle>
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
-          <span style="margin-left:6px;">Scan & Register Workspace</span>
+          <span style="margin-left:6px;">Scan & Register Project</span>
         </div>
         <button class="btn btn-secondary btn-icon" id="btn-close-scan" style="border:none;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -314,9 +378,18 @@
       </div>
       <div class="modal-body">
         <div class="form-group">
-          <label for="scan-path">Workspace Directory Path (Local / Server)</label>
-          <input type="text" id="scan-path" class="form-input" placeholder="e.g. /path/to/microservices or ."
-            value="." />
+          <label for="scan-path">Project Directory Path (Local / Server)</label>
+          <div style="display:flex; gap:0.5rem; align-items:center;">
+            <input type="text" id="scan-path" class="form-input" placeholder="e.g. /path/to/microservices or ."
+              value="." style="flex:1;" />
+            <button class="btn btn-secondary" id="btn-browse-folder" type="button" title="Select folder manually in explorer" style="display:inline-flex; align-items:center; gap:6px; white-space:nowrap; padding:0.5rem 0.85rem;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+              </svg>
+              <span>Browse...</span>
+            </button>
+          </div>
         </div>
         <div class="form-group">
           <label for="scan-project-id">Project ID (Optional)</label>

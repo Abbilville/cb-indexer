@@ -129,13 +129,77 @@ async function loadDashboardData() {
   }
 }
 
-// Render Stats Cards
+// Render Stats Cards (100% Project Focused)
 function renderStats() {
   if (!state.overview) return;
 
-  document.getElementById('stat-projects').textContent = state.status?.active_projects || state.projects.length || '1';
-  document.getElementById('stat-repos').textContent = state.overview.total_repos || '0';
+  // Update Navbar Active Project Badge
+  const navProj = document.getElementById('nav-project-id');
+  if (navProj) {
+    navProj.textContent = state.overview.project_id || state.currentProject || 'workspace';
+  }
+  const navBadge = document.getElementById('nav-project-badge');
+  if (navBadge && state.overview.project_name) {
+    navBadge.title = `Active Project: ${state.overview.project_name} [${state.overview.project_id || ''}]`;
+  }
 
+  // Project / Root GitHub Link
+  let rootGit = state.overview.git_url;
+  if (!rootGit && state.overview.repos) {
+    const rootRepo = state.overview.repos.find(r => r.git_origin === 'root' && r.git_url);
+    if (rootRepo) {
+      const match = rootRepo.git_url.match(/^(https?:\/\/github\.com\/[^\/]+\/[^\/]+)/);
+      rootGit = match ? match[1] : rootRepo.git_url;
+    }
+  }
+
+  const projGitBtn = document.getElementById('project-github-link');
+  const projGitLabel = document.getElementById('project-github-label');
+  const navGitLink = document.getElementById('nav-github-link');
+  const navGitText = document.getElementById('nav-github-text');
+
+  if (rootGit) {
+    const shortRepo = rootGit.replace(/^https?:\/\/(www\.)?github\.com\//, '').replace(/\.git$/, '');
+    if (projGitBtn) {
+      projGitBtn.href = rootGit;
+      projGitBtn.style.display = 'inline-flex';
+      projGitBtn.title = `Project GitHub Repository: ${rootGit}`;
+      if (projGitLabel) projGitLabel.textContent = shortRepo;
+    }
+    if (navGitLink) {
+      navGitLink.href = rootGit;
+      navGitLink.style.display = 'inline-flex';
+      navGitLink.title = `Project GitHub Repository: ${rootGit}`;
+      if (navGitText) navGitText.textContent = shortRepo.split('/').pop() || 'GitHub';
+    }
+  } else {
+    if (projGitBtn) projGitBtn.style.display = 'none';
+    if (navGitLink) navGitLink.style.display = 'none';
+  }
+
+  const totalServices = state.overview.repos ? state.overview.repos.length : (state.overview.total_repos || 0);
+  const indexedCount = state.overview.indexed_repos !== undefined ? state.overview.indexed_repos : (state.overview.repos?.filter(r => r.is_indexed).length || 0);
+
+  // 1. Total Services
+  const elemServices = document.getElementById('stat-services');
+  if (elemServices) elemServices.textContent = totalServices.toLocaleString();
+  const elemServicesSub = document.getElementById('stat-services-sub');
+  if (elemServicesSub) {
+    const techSet = new Set();
+    state.overview.repos?.forEach(r => r.tech_stack?.forEach(t => techSet.add(t)));
+    elemServicesSub.textContent = techSet.size > 0 ? `${techSet.size} Tech Stack${techSet.size > 1 ? 's' : ''}` : 'Microservices & apps';
+  }
+
+  // 2. Index Coverage
+  const elemCoverage = document.getElementById('stat-coverage');
+  if (elemCoverage) elemCoverage.textContent = `${indexedCount} / ${totalServices}`;
+  const elemCoverageSub = document.getElementById('stat-coverage-sub');
+  if (elemCoverageSub) {
+    const pct = totalServices > 0 ? Math.round((indexedCount / totalServices) * 100) : 0;
+    elemCoverageSub.textContent = totalServices === 0 ? 'No services registered' : (pct === 100 ? '100% Fully Indexed' : `${pct}% Knowledge Graph`);
+  }
+
+  // 3. Total Nodes & Edges
   let totalNodes = state.overview.total_nodes || 0;
   let totalEdges = state.overview.total_edges || 0;
   if (!totalNodes && state.overview.repos) {
@@ -144,25 +208,33 @@ function renderStats() {
       totalEdges += (r.index_edges || 0);
     });
   }
-  document.getElementById('stat-nodes').textContent = totalNodes.toLocaleString();
+  const elemNodes = document.getElementById('stat-nodes');
+  if (elemNodes) elemNodes.textContent = totalNodes.toLocaleString();
+  const elemNodesSub = document.getElementById('stat-nodes-sub');
+  if (elemNodesSub) elemNodesSub.textContent = totalEdges ? `${totalEdges.toLocaleString()} call edges` : 'AST code entities';
 
+  // 4. Service Connections
+  const totalRels = state.overview.relationships ? state.overview.relationships.length : (state.overview.total_relationships || 0);
+  const elemConns = document.getElementById('stat-connections');
+  if (elemConns) elemConns.textContent = totalRels.toLocaleString();
+  const elemConnsSub = document.getElementById('stat-connections-sub');
+  if (elemConnsSub) elemConnsSub.textContent = totalRels === 1 ? '1 inter-service link' : `${totalRels} inter-service links`;
+
+  // Live Daemon Status in Top Navbar
   const isIndexing = state.status?.is_indexing;
-  const daemonElem = document.getElementById('stat-daemon');
-  if (isIndexing) {
-    daemonElem.innerHTML = `
-      <span style="display:inline-flex; align-items:center; gap:6px; font-size:1rem; color:#60a5fa;">
-        <span class="pulse-dot pulse-blue"></span> Indexing...
-      </span>`;
-  } else {
-    daemonElem.innerHTML = `
-      <span style="display:inline-flex; align-items:center; gap:6px; font-size:1rem; color:#34d399;">
-        <span class="pulse-dot pulse-green"></span> Active
-      </span>`;
-  }
-
-  const sub = document.getElementById('header-subtitle');
-  if (sub && state.overview.project_name) {
-    sub.textContent = `${state.overview.project_name} [${state.overview.project_id || 'workspace'}]`;
+  const daemonPill = document.getElementById('header-daemon-status');
+  if (daemonPill) {
+    if (isIndexing) {
+      daemonPill.className = 'daemon-pill daemon-indexing';
+      daemonPill.innerHTML = `
+        <span class="pulse-dot pulse-blue"></span>
+        <span id="header-daemon-text">Indexing...</span>`;
+    } else {
+      daemonPill.className = 'daemon-pill daemon-active';
+      daemonPill.innerHTML = `
+        <span class="pulse-dot pulse-green"></span>
+        <span id="header-daemon-text">Daemon Active</span>`;
+    }
   }
 }
 
@@ -173,7 +245,7 @@ function renderServices() {
     container.innerHTML = `
       <div style="grid-column:1/-1; text-align:center; padding:3rem; color:var(--text-dim);">
         <p style="font-size:1.1rem; margin-bottom:0.5rem;">No repositories registered in this project.</p>
-        <p style="font-size:0.85rem;">Click <strong>"Scan New Workspace"</strong> on the right to discover microservices.</p>
+        <p style="font-size:0.85rem;">Click <strong>"Scan New Project"</strong> above to discover microservices.</p>
       </div>`;
     return;
   }
@@ -218,6 +290,21 @@ function renderServices() {
     const statusPulse = isIndexed ? 'pulse-green' : 'pulse-amber';
     const statusText = isIndexed ? `${nodes} AST nodes · ${edges} edges` : 'Not indexed';
 
+    let gitBadge = '';
+    if (repo.git_url) {
+      const isRoot = repo.git_origin === 'root';
+      const originClass = isRoot ? 'git-origin-root' : 'git-origin-service';
+      const originLabel = isRoot ? 'Root' : 'Service';
+      const displayUrl = repo.git_url.replace(/^https?:\/\/(www\.)?github\.com\//, '');
+      gitBadge = `
+        <div class="git-origin-row">
+          <a href="${repo.git_url}" target="_blank" rel="noopener noreferrer" class="git-origin-badge ${originClass}" title="Source: ${originLabel} (${repo.git_url})" onclick="event.stopPropagation()">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+            <span>${originLabel}: ${displayUrl}</span>
+          </a>
+        </div>`;
+    }
+
     return `
       <div class="service-card" data-repo="${repo.name}" style="cursor:pointer;">
         <div>
@@ -225,6 +312,7 @@ function renderServices() {
             <div class="service-name">${repo.name}</div>
             ${portBadge}
           </div>
+          ${gitBadge}
           <div class="service-desc">${repo.description || 'No description provided.'}</div>
           <div class="service-tags">${tagBadges}</div>
         </div>
@@ -603,7 +691,7 @@ function openServiceModal(repo) {
     <!-- AST Knowledge Graph Stats Box -->
     <div style="background:#0f172a; border:1px solid var(--border-color); border-radius:8px; padding:1rem; margin-bottom:1rem;">
       <div style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-muted); margin-bottom:0.5rem; font-weight:700;">
-        🧠 AST Knowledge Graph Ingestion Status
+        AST Knowledge Graph Ingestion Status
       </div>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem; margin-bottom:0.5rem;">
         <div style="background:#1e293b; padding:0.6rem; border-radius:6px;">
@@ -626,6 +714,26 @@ function openServiceModal(repo) {
       <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:0.35rem; font-weight:600;">Detected Technologies</div>
       <div style="display:flex; flex-wrap:wrap; gap:6px;">${stacks}</div>
     </div>
+
+    ${repo.git_url ? `
+    <!-- GitHub Origin & Repository Source -->
+    <div style="background:#0f172a; border:1px solid var(--border-color); border-radius:8px; padding:0.75rem 1rem; margin-bottom:1rem;">
+      <div style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-muted); margin-bottom:0.4rem; font-weight:700;">
+        GitHub Repository Origin
+      </div>
+      <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+        <span class="git-origin-badge ${repo.git_origin === 'root' ? 'git-origin-root' : 'git-origin-service'}" style="font-size:0.75rem; padding:3px 8px;">
+          Origin: ${repo.git_origin === 'root' ? 'Root Repository' : 'Service Repository'}
+        </span>
+        <a href="${repo.git_url}" target="_blank" rel="noopener noreferrer" style="font-size:0.8rem; color:#60a5fa; text-decoration:none; display:inline-flex; align-items:center; gap:4px;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          <span>Open on GitHub ↗</span>
+        </a>
+      </div>
+      <div style="font-size:0.75rem; color:var(--text-muted); margin-top:6px; font-family:'Fira Code', monospace; word-break:break-all;">
+        ${repo.git_url}
+      </div>
+    </div>` : ''}
 
     <!-- Service Relationships -->
     <div style="margin-bottom:1.25rem;">
@@ -867,6 +975,35 @@ function initEvents() {
   });
   document.getElementById('btn-cancel-scan')?.addEventListener('click', () => {
     modalScan.classList.remove('active');
+  });
+
+  // Browse Folder Button (Native OS Explorer)
+  const btnBrowse = document.getElementById('btn-browse-folder');
+  btnBrowse?.addEventListener('click', async () => {
+    const origContent = btnBrowse.innerHTML;
+    btnBrowse.disabled = true;
+    btnBrowse.innerHTML = `<span>Browsing...</span>`;
+    try {
+      const res = await fetchAPI('/api/browse-folder', { method: 'POST' });
+      if (res.status === 'success' && res.path) {
+        document.getElementById('scan-path').value = res.path;
+        const pIdInput = document.getElementById('scan-project-id');
+        if (!pIdInput.value.trim()) {
+          const parts = res.path.split(/[\\/]/).filter(Boolean);
+          if (parts.length > 0) {
+            pIdInput.value = parts[parts.length - 1];
+          }
+        }
+        showToast(`Selected directory: ${res.path}`, 'success');
+      } else if (res.status === 'error') {
+        showToast(`Folder selection error: ${res.message}`, 'error');
+      }
+    } catch (err) {
+      showToast(`Could not open explorer: ${err.message}`, 'error');
+    } finally {
+      btnBrowse.disabled = false;
+      btnBrowse.innerHTML = origContent;
+    }
   });
 
   document.getElementById('btn-submit-scan')?.addEventListener('click', async () => {

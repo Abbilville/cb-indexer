@@ -111,10 +111,82 @@ header {
   color: var(--text-muted);
 }
 
+.nav-project-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-family: 'Fira Code', monospace;
+  margin-top: 2px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 1px 7px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.project-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #60a5fa;
+  box-shadow: 0 0 6px rgba(96, 165, 250, 0.6);
+}
+
+.nav-github-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: #93c5fd;
+  font-family: 'Fira Code', monospace;
+  background: rgba(59, 130, 246, 0.12);
+  padding: 1px 7px;
+  border-radius: 4px;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  text-decoration: none;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.nav-github-badge:hover {
+  background: rgba(59, 130, 246, 0.25);
+  border-color: #60a5fa;
+  color: #dbeafe;
+}
+
 .header-controls {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
+
+.daemon-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0.35rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.daemon-pill.daemon-active {
+  border-color: rgba(52, 211, 153, 0.35);
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.daemon-pill.daemon-indexing {
+  border-color: rgba(96, 165, 250, 0.4);
+  color: #60a5fa;
+  background: rgba(59, 130, 246, 0.12);
 }
 
 .select-wrapper {
@@ -202,11 +274,104 @@ select:hover, select:focus {
   padding: 0.45rem 0.55rem;
 }
 
+/* Top Action Bar above Hero Stats */
+.stats-action-bar {
+  max-width: 1400px;
+  width: 100%;
+  margin: 1.25rem auto 0;
+  padding: 0 1.5rem;
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.project-picker-container {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.project-picker-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.project-picker-container .select-wrapper select {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: #f1f5f9;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.45rem 2rem 0.45rem 0.85rem;
+  min-width: 220px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.project-picker-container .select-wrapper select:hover,
+.project-picker-container .select-wrapper select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-glow);
+}
+
+.project-github-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0.42rem 0.85rem;
+  border-radius: var(--radius-sm);
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid var(--border-subtle);
+  color: #93c5fd;
+  font-size: 0.82rem;
+  font-family: 'Fira Code', monospace;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  max-width: 280px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.project-github-btn:hover {
+  background: rgba(30, 41, 59, 0.9);
+  border-color: var(--primary);
+  color: #bfdbfe;
+  box-shadow: 0 0 0 2px var(--primary-glow);
+  transform: translateY(-1px);
+}
+
+.project-github-btn svg {
+  flex-shrink: 0;
+}
+
+.project-github-btn span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.stats-action-bar .btn {
+  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.3);
+  font-weight: 600;
+  font-size: 0.85rem;
+  padding: 0.5rem 1.1rem;
+}
+
 /* Hero Stats Bar */
 .hero-stats {
   max-width: 1400px;
   width: 100%;
-  margin: 1.25rem auto 0;
+  margin: 0.75rem auto 0;
   padding: 0 1.5rem;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -246,6 +411,7 @@ select:hover, select:focus {
 .icon-purple { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }
 .icon-emerald { background: rgba(16, 185, 129, 0.15); color: #34d399; }
 .icon-amber { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+.icon-cyan { background: rgba(6, 182, 212, 0.15); color: #22d3ee; }
 
 .stat-info .stat-label {
   font-size: 0.75rem;
@@ -260,6 +426,13 @@ select:hover, select:focus {
   font-weight: 700;
   color: var(--text-main);
   line-height: 1.2;
+}
+
+.stat-info .stat-sub {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  margin-top: 3px;
+  white-space: nowrap;
 }
 
 /* Main Layout */
@@ -387,12 +560,35 @@ main {
 .legend-item {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
 }
-.legend-dot {
-  width: 8px;
-  height: 8px;
+
+.legend-node-ring {
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
+  background: #0f172a;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.legend-node-indexed {
+  border: 2px solid #10b981;
+  box-shadow: 0 0 5px rgba(16, 185, 129, 0.4);
+}
+
+.legend-node-unindexed {
+  border: 2px solid #3b82f6;
+  box-shadow: 0 0 5px rgba(59, 130, 246, 0.4);
+}
+
+.legend-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 10px;
+  flex-shrink: 0;
 }
 
 .graph-edge-path {
@@ -470,6 +666,8 @@ main {
   flex-direction: column;
   justify-content: space-between;
   cursor: pointer;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .service-card:hover {
@@ -529,6 +727,60 @@ main {
 .tag-node { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3); }
 .tag-java { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
 .tag-py { background: rgba(234, 179, 8, 0.15); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.3); }
+
+/* GitHub Origin Badges */
+.git-origin-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 0.6rem;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.git-origin-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.7rem;
+  font-family: 'Fira Code', monospace;
+  padding: 2px 7px;
+  border-radius: 4px;
+  text-decoration: none;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.git-origin-badge svg {
+  flex-shrink: 0;
+}
+
+.git-origin-badge span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  display: inline-block;
+}
+
+.git-origin-root {
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: #93c5fd;
+}
+
+.git-origin-service {
+  background: rgba(168, 85, 247, 0.12);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  color: #c084fc;
+}
+
+.git-origin-badge:hover {
+  filter: brightness(1.2);
+  text-decoration: underline;
+}
 
 .service-footer {
   border-top: 1px solid rgba(255, 255, 255, 0.05);
