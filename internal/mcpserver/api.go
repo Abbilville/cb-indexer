@@ -4,7 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -246,7 +250,15 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 			})
 
 			if req.Pull {
-				_, _ = gitwatcher.GitPull(ctx, fullPath)
+				if _, err := gitwatcher.GitPull(ctx, fullPath); err != nil {
+					Broadcast(EventMessage{
+						Type:      "log",
+						ProjectID: reg.ProjectID,
+						RepoName:  repo.Name,
+						Status:    "warning",
+						Message:   fmt.Sprintf("Git pull '%s' failed: %v", repo.Name, err),
+					})
+				}
 			}
 			res := cbmwrite.IndexSingleRepo(ctx, fullPath, repo.Name, mode, req.Persistence)
 			durMs := time.Since(startTime).Milliseconds()
@@ -294,8 +306,36 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 		})
 
 		if req.Pull {
+			baseDir := ""
+			if reg.SourcePath != "" {
+				baseDir = filepath.Dir(reg.SourcePath)
+			}
+			if baseDir != "" {
+				if _, err := gitwatcher.GitPull(ctx, baseDir); err != nil {
+					Broadcast(EventMessage{
+						Type:      "log",
+						ProjectID: reg.ProjectID,
+						Status:    "warning",
+						Message:   fmt.Sprintf("Git pull root repository failed: %v", err),
+					})
+				}
+			}
 			for _, repo := range reg.Repos {
-				_, _ = gitwatcher.GitPull(ctx, repo.LocalPath)
+				fullPath := repo.LocalPath
+				if fullPath != "" && !filepath.IsAbs(fullPath) && baseDir != "" {
+					fullPath = filepath.Join(baseDir, fullPath)
+				}
+				if fullPath != "" && fullPath != baseDir {
+					if _, err := gitwatcher.GitPull(ctx, fullPath); err != nil {
+						Broadcast(EventMessage{
+							Type:      "log",
+							ProjectID: reg.ProjectID,
+							RepoName:  repo.Name,
+							Status:    "warning",
+							Message:   fmt.Sprintf("Git pull '%s' failed: %v", repo.Name, err),
+						})
+					}
+				}
 			}
 		}
 
@@ -440,6 +480,102 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 			"status":       "success",
 			"project_id":   req.ProjectID,
 			"unregistered": unregistered,
+		})
+	})
+
+	// 7. GET /api/browse-dirs?path=... (Directory listing fallback)
+	mux.HandleFunc("/api/browse-dirs", func(w http.ResponseWriter, r *http.Request) {
+		if !checkAuth(r, authToken) {
+			writeError(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		targetPath := r.URL.Query().Get("path")
+		if targetPath == "" {
+			targetPath = "."
+		}
+		abs, err := filepath.Abs(targetPath)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		entries, err := os.ReadDir(abs)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		var dirs []string
+		for _, e := range entries {
+			if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+				dirs = append(dirs, e.Name())
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"current": abs,
+			"parent":  filepath.Dir(abs),
+			"dirs":    dirs,
+		})
+	})
+
+	// 8. POST & GET /api/browse-folder (Opens native folder picker dialog in OS explorer)
+	mux.HandleFunc("/api/browse-folder", func(w http.ResponseWriter, r *http.Request) {
+		if !checkAuth(r, authToken) {
+			writeError(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		if r.Method != http.MethodPost && r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+
+		var selectedPath string
+		var err error
+
+		switch runtime.GOOS {
+		case "windows":
+			psCmd := `Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.FolderBrowserDialog; $f.Description = 'Select Project Folder'; $f.ShowNewFolderButton = $true; if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($f.SelectedPath) }`
+			cmd := exec.Command("powershell", "-NoProfile", "-STA", "-Command", psCmd)
+			out, runErr := cmd.Output()
+			if runErr == nil {
+				selectedPath = strings.TrimSpace(string(out))
+			} else {
+				err = runErr
+			}
+		case "darwin":
+			cmd := exec.Command("osascript", "-e", `POSIX path of (choose folder with prompt "Select Project Folder")`)
+			out, runErr := cmd.Output()
+			if runErr == nil {
+				selectedPath = strings.TrimSpace(string(out))
+			} else {
+				err = runErr
+			}
+		default:
+			cmd := exec.Command("zenity", "--file-selection", "--directory", "--title=Select Project Folder")
+			out, runErr := cmd.Output()
+			if runErr == nil {
+				selectedPath = strings.TrimSpace(string(out))
+			} else {
+				err = runErr
+			}
+		}
+
+		if selectedPath == "" {
+			if err != nil {
+				writeJSON(w, http.StatusOK, map[string]any{
+					"status":  "error",
+					"message": err.Error(),
+				})
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"status": "cancelled",
+			})
+			return
+		}
+
+		cleanPath := filepath.Clean(selectedPath)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status": "success",
+			"path":   cleanPath,
 		})
 	})
 }

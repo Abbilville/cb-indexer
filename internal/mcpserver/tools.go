@@ -148,11 +148,12 @@ func RegisterTools(s *mcp.Server) {
 
 		var rels []registry.RelationshipInfo
 		dir := strings.ToLower(input.Direction)
-		if dir == "inbound" {
+		switch dir {
+		case "inbound":
 			rels = inbound
-		} else if dir == "outbound" {
+		case "outbound":
 			rels = outbound
-		} else {
+		default:
 			rels = append(inbound, outbound...)
 		}
 
@@ -240,8 +241,21 @@ func RegisterTools(s *mcp.Server) {
 		}
 
 		if input.Pull {
+			baseDir := ""
+			if reg.SourcePath != "" {
+				baseDir = filepath.Dir(reg.SourcePath)
+			}
+			if baseDir != "" {
+				_, _ = gitwatcher.GitPull(ctx, baseDir)
+			}
 			for _, r := range reg.Repos {
-				_, _ = gitwatcher.GitPull(ctx, r.LocalPath)
+				fullPath := r.LocalPath
+				if fullPath != "" && !filepath.IsAbs(fullPath) && baseDir != "" {
+					fullPath = filepath.Join(baseDir, fullPath)
+				}
+				if fullPath != "" && fullPath != baseDir {
+					_, _ = gitwatcher.GitPull(ctx, fullPath)
+				}
 			}
 		}
 		report := cbmwrite.BatchIndexProject(ctx, reg, mode, input.Persistence)
