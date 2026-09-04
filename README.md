@@ -15,8 +15,9 @@
   <a href="#-connecting-ai-agents-via-mcp">MCP Setup</a> •
   <a href="#-mcp-tools-reference--ai-prompt-examples">MCP Tools</a> •
   <a href="#-web-dashboard-guide">Dashboard Guide</a> •
+  <a href="#-authentication--security">Security & Auth</a> •
   <a href="#-cli-reference">CLI Reference</a> •
-  <a href="#-private-repositories--git-sync">Git & Auth</a> •
+  <a href="#-private-repositories--git-sync">Git Sync</a> •
   <a href="#-docker--container-deployment">Docker</a>
 </p>
 
@@ -56,11 +57,14 @@ When developers work with **AI coding assistants** (like Cursor, Claude Desktop,
 | Feature | Description |
 | :--- | :--- |
 | 📋 **Whiteboard Architecture Canvas** | Infinite whiteboard canvas with drag-to-pan, mouse cursor zoom, draggable nodes, and bounded workspace perimeters. |
+| 📌 **Canvas Layout Memory & Reset** | Saved node drag positions persisted in local storage across browser refreshes, with one-click **Reset Layout** button. |
 | 🌈 **Non-Overlapping Multi-Edge Arcs** | Curved quadratic Bezier arcs prevent lines from stacking when multiple routes exist between the same pair of services. |
 | 📊 **100% Project-Focused Metrics** | Real-time hero cards tracking `Total Services`, `Index Coverage`, `Total Nodes`, and `Service Connections`. |
 | 🔍 **Native Folder Browser Dialog** | Integrated OS Explorer folder selection (`Browse...`) to effortlessly register local workspaces. |
 | 🐙 **Git Origin & Source Tracing** | Automatically classifies whether a service originates from the Monorepo Root or an independent Service repo, with clean ellipsis truncation. |
-| 🔄 **Git Pull & Automatic Sync** | One-click `Git Pull & Sync All` to pull latest commits and re-index modified files into the knowledge graph. |
+| 🗑️ **GitHub-Style Project Deletion** | Safeguarded project removal requiring typing the exact `project_id` to confirm, with automatic AST graph cache purging. |
+| 🔒 **API Token Auth & `.env` Support** | Built-in `.env` file loader, token-protected REST & MCP endpoints, with real-time status badges in the top navbar. |
+| 🔄 **Git Pull & Automatic Sync** | One-click `Git Pull & Sync All` (fast-forward safe) to pull latest commits and re-index modified files into the knowledge graph. |
 | ⚡ **Real-Time Live SSE Stream** | Watch background indexing jobs, warnings, and completions live on terminal stdout and the dashboard via Server-Sent Events (`/api/events`). |
 | 🤖 **Standard MCP Server** | Connects seamlessly with Claude Desktop, Cursor, Antigravity IDE, Cline, and Continue via HTTP or Stdio. |
 
@@ -104,7 +108,7 @@ go build -o bin/oss-indexer.exe ./cmd/oss-indexer
 ### 3. Start the Daemon
 
 ```bash
-# Start background daemon on port 43770
+# Start background daemon (automatically loads .env if present)
 oss-indexer daemon
 ```
 
@@ -113,6 +117,7 @@ Terminal output:
 [oss-indexer] Daemon started (interval: 15m0s, auto-pull: true, mode: moderate)
 [oss-indexer] Dashboard UI:    http://127.0.0.1:43770/
 [oss-indexer] MCP HTTP Server: http://127.0.0.1:43770/mcp
+[oss-indexer] Auth Status:     ENABLED (API & Dashboard require token)
 ```
 
 Open your browser at **[http://localhost:43770/](http://localhost:43770/)**.
@@ -220,6 +225,7 @@ Once connected, your AI assistant can call any of the following 9 tools autonomo
 - **Project Selector**: Easily switch between registered microservice ecosystems directly above the stats cards.
 - **Project GitHub Button**: Click the GitHub badge next to the dropdown (`[ 🐙 owner/repo ↗ ]`) to jump directly to the root repository on GitHub.
 - **Scan New Project (`Browse...`)**: Click **Scan New Project** and use the **Browse...** button to open the native OS folder picker (Windows Explorer, macOS, or Linux).
+- **GitHub-Style Project Deletion (`🗑️ Delete Project`)**: Click the red delete button to decommission a project. A modal requires you to **type the exact `project_id`** to confirm deletion, preventing accidental removals, with an optional toggle to purge AST SQLite graph databases.
 
 ### 2. Project-Focused KPI Cards
 Directly below the action bar are 4 real-time cards focused 100% on the active project:
@@ -235,6 +241,8 @@ Directly below the action bar are 4 real-time cards focused 100% on the active p
   - `Gateway Route`: Solid blue directional arrow `──▶`
   - `Service Registry`: Dashed purple directional arrow `┈┈▶`
   - `API Call`: Dashed cyan directional arrow `┈┈▶`
+- **Canvas Persistence**: Drag nodes freely across the whiteboard. Custom node positions are automatically remembered in your browser across sessions.
+- **Reset Layout**: Click the **Reset Layout** button to restore the dynamic, non-overlapping circular layout instantly.
 - **Curved Quadratic Arcs**: Overlapping or bidirectional routes automatically curve into distinct Bezier arcs so no lines stack.
 - **Inspect Service**: Click any node on the whiteboard or card in the catalog to view inbound/outbound calls, ports, tech stacks, and trigger single-service re-indexing.
 
@@ -243,6 +251,51 @@ Directly below the action bar are 4 real-time cards focused 100% on the active p
   - `Root: owner/repo` (for monorepo services)
   - `Service: owner/repo` (for independent service repos)
 - Long repository names automatically truncate with an **ellipsis (`...`)** to maintain a clean card grid layout.
+
+### 5. Header Status & Authentication Controls
+- **Live Daemon Status Pill**: Real-time pulsing badge reflecting daemon background status.
+- **API Auth Status Indicator**: Click the **Auth** button to enter or clear your secret token, showing live verification states (Active, Token Req, Auth Failed, Auth Disabled).
+- **Refresh**: Force an immediate refresh of topology status and index metrics.
+
+---
+
+## 🔐 Authentication & Security
+
+`oss-indexer` includes built-in token authentication for HTTP MCP endpoints, REST APIs, and the Web Dashboard.
+
+### 1. Enabling Authentication via `.env` or Environment Variables
+Create or edit `.env` in your repository root:
+```env
+# Secret token / API key for securing HTTP MCP endpoints & Web Dashboard
+OSS_INDEXER_AUTH_TOKEN=your-secret-token
+
+# Optional custom port (Default: 43770)
+PORT=43770
+```
+
+When you start `oss-indexer daemon`, it **automatically loads `.env` on startup**. You can also pass the token via CLI flag or process environment variable:
+```bash
+oss-indexer daemon --auth-token "your-secret-token"
+```
+
+> [!NOTE]
+> If `OSS_INDEXER_AUTH_TOKEN` is left empty or omitted, authentication is **disabled** for open local development.
+
+### 2. Authenticating in the Web Dashboard
+1. Open the dashboard at `http://localhost:43770/`.
+2. Click the **Auth** button in the upper-right header.
+3. Enter your secret token into the dialog and click **Save & Apply**.
+4. The navbar badge displays the real-time authentication status:
+   - 🟢 **Active**: Server requires auth, and the entered token was validated.
+   - 🟡 **Token Req**: Server requires an auth token, but none has been saved in the browser.
+   - 🔴 **Auth Failed**: The entered token was rejected with `401 Unauthorized`.
+   - ⚪ **Auth (Disabled)**: The server has no token configured (open development mode).
+
+### 3. Authenticating AI Agents via MCP
+When connecting AI agents over Streamable HTTP, pass the token in your client headers:
+- `Authorization: Bearer <your-secret-token>`
+- or `X-API-Key: <your-secret-token>`
+- or query parameter: `?token=<your-secret-token>` (supported for browser and SSE connections)
 
 ---
 
@@ -372,6 +425,19 @@ Specify `--port` in the CLI or set `PORT=5000` in your environment or `.env`:
 ```bash
 oss-indexer daemon --port 5000
 ```
+</details>
+
+<details>
+<summary><strong>Q: How does API authentication work, and why does my token show "Auth Failed" or "Auth (Disabled)"?</strong></summary>
+
+- If `OSS_INDEXER_AUTH_TOKEN` is set in your `.env` or environment, the server protects all `/api/*` endpoints and `/mcp`. If you haven't entered the matching token in the Web Dashboard (via the **Auth** button), requests will return `401 Unauthorized` and the status badge will indicate **Auth Failed**.
+- If no token is configured on the server, authentication is bypassed for local development, and the badge displays **Auth (Disabled)**.
+</details>
+
+<details>
+<summary><strong>Q: How do I safely delete or decommission a project from the catalog?</strong></summary>
+
+Click the red **Delete Project** button in the dashboard action bar (or run `oss-indexer remove <project_id>`). To prevent accidental deletion, the dashboard requires you to type the exact `project_id` before confirming. You can also toggle whether to purge the underlying AST knowledge graph cache files.
 </details>
 
 <details>
