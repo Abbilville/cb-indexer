@@ -177,6 +177,13 @@ function renderStats() {
     if (navGitLink) navGitLink.style.display = 'none';
   }
 
+  // Show / Hide Delete Project Buttons
+  const delBtn = document.getElementById('btn-open-delete-project');
+  const sideDelBtn = document.getElementById('btn-sidebar-delete-project');
+  const hasActiveProject = Boolean(state.currentProject && state.currentProject !== '');
+  if (delBtn) delBtn.style.display = hasActiveProject ? 'inline-flex' : 'none';
+  if (sideDelBtn) sideDelBtn.style.display = hasActiveProject ? 'inline-flex' : 'none';
+
   const totalServices = state.overview.repos ? state.overview.repos.length : (state.overview.total_repos || 0);
   const indexedCount = state.overview.indexed_repos !== undefined ? state.overview.indexed_repos : (state.overview.repos?.filter(r => r.is_indexed).length || 0);
 
@@ -1117,6 +1124,90 @@ function initEvents() {
     modalAuth.classList.remove('active');
     showToast('API Auth Token cleared', 'info');
     loadDashboardData();
+  });
+
+  // Delete Project Modal Handlers
+  const modalDelete = document.getElementById('modal-delete-project');
+  const deleteInput = document.getElementById('delete-confirm-input');
+  const deleteBtn = document.getElementById('btn-confirm-delete-project');
+
+  function openDeleteProjectModal() {
+    const pId = (state.overview?.project_id || state.currentProject || '').trim();
+    if (!pId) {
+      showToast('No active project selected to delete', 'error');
+      return;
+    }
+    const nameElem = document.getElementById('delete-modal-project-name');
+    const targetElem = document.getElementById('delete-confirm-target');
+    if (nameElem) nameElem.textContent = pId;
+    if (targetElem) targetElem.textContent = pId;
+    if (deleteInput) {
+      deleteInput.value = '';
+    }
+    if (deleteBtn) {
+      deleteBtn.disabled = true;
+      deleteBtn.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="3 6 5 6 21 6"></polyline>
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+        </svg>
+        <span>Delete Project</span>`;
+    }
+    modalDelete?.classList.add('active');
+    setTimeout(() => deleteInput?.focus(), 50);
+  }
+
+  function closeDeleteProjectModal() {
+    modalDelete?.classList.remove('active');
+    if (deleteInput) deleteInput.value = '';
+  }
+
+  document.getElementById('btn-open-delete-project')?.addEventListener('click', openDeleteProjectModal);
+  document.getElementById('btn-sidebar-delete-project')?.addEventListener('click', openDeleteProjectModal);
+  document.getElementById('btn-close-delete-project')?.addEventListener('click', closeDeleteProjectModal);
+  document.getElementById('btn-cancel-delete-project')?.addEventListener('click', closeDeleteProjectModal);
+
+  // GitHub-style confirmation: user must type exact project ID
+  deleteInput?.addEventListener('input', (e) => {
+    const pId = (state.overview?.project_id || state.currentProject || '').trim();
+    const typed = e.target.value.trim();
+    if (deleteBtn) {
+      deleteBtn.disabled = typed !== pId;
+    }
+  });
+
+  deleteBtn?.addEventListener('click', async () => {
+    const pId = (state.overview?.project_id || state.currentProject || '').trim();
+    if (!pId) return;
+
+    deleteBtn.disabled = true;
+    deleteBtn.innerHTML = '<span>Deleting project & graphs...</span>';
+
+    const purgeGraphs = document.getElementById('delete-purge-graphs')?.checked ?? true;
+
+    try {
+      await fetchAPI('/api/project/remove', {
+        method: 'POST',
+        body: JSON.stringify({
+          project_id: pId,
+          purge_graphs: purgeGraphs,
+        }),
+      });
+
+      clearSavedNodePositions(pId);
+      closeDeleteProjectModal();
+      showToast(`Project '${pId}' has been deleted.`, 'success');
+
+      state.currentProject = '';
+      state.overview = null;
+      state.nodePositions.clear();
+
+      await loadProjects();
+      await loadDashboardData();
+    } catch (err) {
+      showToast(`Failed to delete project: ${err.message}`, 'error');
+      if (deleteBtn) deleteBtn.disabled = false;
+    }
   });
 
   updateAuthLabel();

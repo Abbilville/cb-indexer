@@ -472,15 +472,25 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 			return
 		}
 
-		ctx := r.Context()
-		if req.PurgeGraphs {
-			_ = cbmwrite.DeleteIndexedGraph(ctx, req.ProjectID)
+		reg, _ := registry.LoadRegistry(req.ProjectID)
+		pID := req.ProjectID
+		if reg != nil {
+			pID = reg.ProjectID
 		}
 
-		unregistered := registry.UnregisterProjectFromCatalog(req.ProjectID)
+		ctx := r.Context()
+		if req.PurgeGraphs {
+			if reg != nil {
+				_ = cbmwrite.PurgeProjectGraphs(ctx, reg)
+			} else {
+				_ = cbmwrite.DeleteIndexedGraph(ctx, pID)
+			}
+		}
+
+		unregistered := registry.UnregisterProjectFromCatalog(pID)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status":       "success",
-			"project_id":   req.ProjectID,
+			"project_id":   pID,
 			"unregistered": unregistered,
 		})
 	})
