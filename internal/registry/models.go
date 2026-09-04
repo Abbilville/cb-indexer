@@ -14,6 +14,8 @@ type RepoInfo struct {
 	EntryPoint  string   `json:"entry_point,omitempty" yaml:"entry_point,omitempty"`
 	Port        *int     `json:"port,omitempty" yaml:"port,omitempty"`
 	Tags        []string `json:"tags,omitempty" yaml:"tags,omitempty"`
+	GitURL      string   `json:"git_url,omitempty" yaml:"git_url,omitempty"`
+	GitOrigin   string   `json:"git_origin,omitempty" yaml:"git_origin,omitempty"` // "root" or "service"
 }
 
 // RelationshipInfo represents a dependency or communication edge between two repositories.
@@ -30,6 +32,7 @@ type ProjectRegistry struct {
 	ProjectID     string             `json:"project_id" yaml:"project_id"`
 	Name          string             `json:"name" yaml:"name"`
 	Description   string             `json:"description,omitempty" yaml:"description,omitempty"`
+	GitURL        string             `json:"git_url,omitempty" yaml:"git_url,omitempty"`
 	Repos         []RepoInfo         `json:"repos" yaml:"repos"`
 	Relationships []RelationshipInfo `json:"relationships" yaml:"relationships"`
 	SourcePath    string             `json:"source_path,omitempty" yaml:"-"`

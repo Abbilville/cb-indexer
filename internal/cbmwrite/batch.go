@@ -3,6 +3,7 @@ package cbmwrite
 import (
 	"context"
 	"path/filepath"
+	"time"
 
 	"oss-indexer/internal/graphmeta"
 	"oss-indexer/internal/registry"
@@ -19,12 +20,21 @@ type BatchIndexReport struct {
 	Results     []RepoIndexResult `json:"results"`
 }
 
+// ProgressCallback is invoked as each repository starts and finishes indexing.
+type ProgressCallback func(current, total int, repoName, status, errStr string, durationMs int64)
+
 // BatchIndexProject executes batch AST indexing across all repositories in a project.
 func BatchIndexProject(ctx context.Context, reg *registry.ProjectRegistry, mode string, persistence bool) BatchIndexReport {
+	return BatchIndexProjectWithProgress(ctx, reg, mode, persistence, nil)
+}
+
+// BatchIndexProjectWithProgress executes batch AST indexing and emits progress callbacks.
+func BatchIndexProjectWithProgress(ctx context.Context, reg *registry.ProjectRegistry, mode string, persistence bool, onProgress ProgressCallback) BatchIndexReport {
 	if mode == "" {
 		mode = "moderate"
 	}
 
+	total := len(reg.Repos)
 	var results []RepoIndexResult
 	successCount := 0
 	baseDir := ""
@@ -32,16 +42,28 @@ func BatchIndexProject(ctx context.Context, reg *registry.ProjectRegistry, mode 
 		baseDir = filepath.Dir(reg.SourcePath)
 	}
 
-	for _, repo := range reg.Repos {
+	for i, repo := range reg.Repos {
+		idx := i + 1
 		fullPath := repo.LocalPath
 		if fullPath != "" && !filepath.IsAbs(fullPath) && baseDir != "" {
 			fullPath = filepath.Join(baseDir, fullPath)
 		}
 
+		if onProgress != nil {
+			onProgress(idx, total, repo.Name, "indexing", "", 0)
+		}
+
+		start := time.Now()
 		res := IndexSingleRepo(ctx, fullPath, repo.Name, mode, persistence)
+		durMs := time.Since(start).Milliseconds()
+
 		results = append(results, res)
 		if res.Status == "success" {
 			successCount++
+		}
+
+		if onProgress != nil {
+			onProgress(idx, total, repo.Name, res.Status, res.Error, durMs)
 		}
 	}
 

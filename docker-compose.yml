@@ -6,9 +6,9 @@ services:
     container_name: oss-indexer
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "43770:43770"
     environment:
-      - PORT=8080
+      - PORT=43770
       - OSS_INDEXER_AUTH_TOKEN=${OSS_INDEXER_AUTH_TOKEN:-}
     volumes:
       - ./data:/app/data

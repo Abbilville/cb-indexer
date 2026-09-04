@@ -3,6 +3,8 @@ package gitwatcher
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -31,6 +33,7 @@ func GitFetch(ctx context.Context, repoPath string) error {
 
 	cmd := exec.CommandContext(execCtx, "git", "fetch", "origin")
 	cmd.Dir = repoPath
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	return cmd.Run()
 }
 
@@ -41,12 +44,18 @@ func GitPull(ctx context.Context, repoPath string) (bool, error) {
 	execCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(execCtx, "git", "pull")
+	cmd := exec.CommandContext(execCtx, "git", "pull", "--ff-only")
 	cmd.Dir = repoPath
-	var outBuf bytes.Buffer
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
 
 	if err := cmd.Run(); err != nil {
+		errStr := strings.TrimSpace(errBuf.String())
+		if errStr != "" {
+			return false, fmt.Errorf("%s", errStr)
+		}
 		return false, err
 	}
 

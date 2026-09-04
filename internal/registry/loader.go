@@ -73,13 +73,17 @@ func ResolveRegistryPath(target string) (string, error) {
 
 		// Direct lookup in projects catalog
 		catalog := GetProjectsCatalog()
-		if entry, exists := catalog[target]; exists && entry.RegistryPath != "" {
-			regPath := entry.RegistryPath
-			if !filepath.IsAbs(regPath) {
-				regPath, _ = filepath.Abs(regPath)
-			}
-			if stat, err := os.Stat(regPath); err == nil && !stat.IsDir() {
-				return regPath, nil
+		for pid, entry := range catalog {
+			if strings.EqualFold(pid, target) || strings.EqualFold(entry.RegistryPath, target) || strings.EqualFold(entry.RootPath, target) {
+				if entry.RegistryPath != "" {
+					regPath := entry.RegistryPath
+					if !filepath.IsAbs(regPath) {
+						regPath, _ = filepath.Abs(regPath)
+					}
+					if stat, err := os.Stat(regPath); err == nil && !stat.IsDir() {
+						return regPath, nil
+					}
+				}
 			}
 		}
 	}
@@ -158,5 +162,14 @@ func SaveRegistry(registry *ProjectRegistry, outputPath string) (string, error) 
 	}
 
 	registry.SourcePath = absOut
+
+	// Register project in the global machine-wide catalog
+	_ = RegisterProjectInCatalog(registry.ProjectID, ProjectCatalogEntry{
+		Name:         registry.Name,
+		Description:  registry.Description,
+		RegistryPath: absOut,
+		RootPath:     parentDir,
+	})
+
 	return absOut, nil
 }
