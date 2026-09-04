@@ -9,6 +9,7 @@ const state = {
   overview: null,
   status: null,
   authToken: localStorage.getItem('OSS_INDEXER_AUTH_TOKEN') || '',
+  serverAuthRequired: null,
   filterQuery: '',
   isIndexing: false,
   zoomLevel: 1,
@@ -33,7 +34,8 @@ async function fetchAPI(endpoint, options = {}) {
 
   const response = await fetch(endpoint, { ...options, headers });
   if (response.status === 401) {
-    showToast('Unauthorized: Check your API Auth Token', 'error');
+    showToast('Unauthorized (401): Check your API Auth Token', 'error');
+    updateAuthLabel(true);
     throw new Error('Unauthorized');
   }
   if (!response.ok) {
@@ -1213,10 +1215,46 @@ function initEvents() {
   updateAuthLabel();
 }
 
-function updateAuthLabel() {
+async function checkServerHealth() {
+  try {
+    const res = await fetch('/health');
+    if (res.ok) {
+      const data = await res.json();
+      state.serverAuthRequired = typeof data.auth_required === 'boolean' ? data.auth_required : null;
+      updateAuthLabel();
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
+function updateAuthLabel(isUnauthorized = false) {
   const lbl = document.getElementById('auth-status-label');
-  if (lbl) {
-    lbl.textContent = state.authToken ? 'Active' : 'No Auth';
+  if (!lbl) return;
+
+  if (isUnauthorized) {
+    lbl.textContent = 'Auth Failed';
+    lbl.style.color = '#f87171';
+    lbl.title = 'Server rejected API token (401 Unauthorized)';
+    return;
+  }
+
+  if (state.serverAuthRequired === false) {
+    lbl.textContent = state.authToken ? 'Auth (Disabled)' : 'No Auth';
+    lbl.style.color = 'var(--text-muted)';
+    lbl.title = 'Server running in open mode (OSS_INDEXER_AUTH_TOKEN is not set on server)';
+  } else if (state.serverAuthRequired === true) {
+    if (state.authToken) {
+      lbl.textContent = 'Active';
+      lbl.style.color = '#34d399';
+      lbl.title = 'API Auth Token configured and required by server';
+    } else {
+      lbl.textContent = 'Token Req';
+      lbl.style.color = '#fbbf24';
+      lbl.title = 'Server requires an Auth Token to access data';
+    }
+  } else {
+    lbl.textContent = state.authToken ? 'Active' : 'Auth';
     lbl.style.color = state.authToken ? '#34d399' : 'var(--text-muted)';
   }
 }
@@ -1225,12 +1263,14 @@ function updateAuthLabel() {
 window.addEventListener('DOMContentLoaded', async () => {
   initEvents();
   initRealtimeEvents();
+  await checkServerHealth();
   await loadProjects();
   await loadDashboardData();
 
   // Background polling every 12 seconds
   setInterval(() => {
     if (!state.isIndexing) {
+      checkServerHealth();
       loadDashboardData();
     }
   }, 12000);

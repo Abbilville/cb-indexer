@@ -48,7 +48,8 @@ func ServeHTTP(ctx context.Context, s *mcp.Server, port int, authToken string) e
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"healthy","service":"oss-indexer"}`))
+		authRequired := authToken != ""
+		_, _ = w.Write([]byte(fmt.Sprintf(`{"status":"healthy","service":"oss-indexer","auth_required":%t}`, authRequired)))
 	})
 
 	// 3. REST API Endpoints for Dashboard & Standalone Clients
@@ -83,6 +84,11 @@ func ServeHTTP(ctx context.Context, s *mcp.Server, port int, authToken string) e
 
 	fmt.Printf("[oss-indexer] Dashboard UI:    http://127.0.0.1:%d/\n", port)
 	fmt.Printf("[oss-indexer] MCP HTTP Server: http://127.0.0.1:%d/mcp\n", port)
+	if authToken != "" {
+		fmt.Printf("[oss-indexer] Auth Status:     ENABLED (API & Dashboard require token)\n")
+	} else {
+		fmt.Printf("[oss-indexer] Auth Status:     DISABLED (Open local development mode)\n")
+	}
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return err
 	}

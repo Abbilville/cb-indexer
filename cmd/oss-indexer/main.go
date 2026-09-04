@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -19,6 +20,41 @@ import (
 	"oss-indexer/internal/scanner"
 	"oss-indexer/internal/workflows"
 )
+
+// loadDotEnv parses key-value pairs from a local .env file into the process environment
+// if the variable is not already defined in the OS environment.
+func loadDotEnv() {
+	candidates := []string{".env"}
+	if exe, err := os.Executable(); err == nil {
+		candidates = append(candidates, filepath.Join(filepath.Dir(exe), ".env"))
+	}
+
+	for _, path := range candidates {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		for _, rawLine := range strings.Split(string(data), "\n") {
+			line := strings.TrimSpace(rawLine)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				key := strings.TrimSpace(parts[0])
+				val := strings.TrimSpace(parts[1])
+				// Strip surrounding single or double quotes
+				if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
+					val = val[1 : len(val)-1]
+				}
+				if os.Getenv(key) == "" {
+					_ = os.Setenv(key, val)
+				}
+			}
+		}
+		return
+	}
+}
 
 func printHelp() {
 	fmt.Println(`oss-indexer — Repository Architecture Hub & Ingestion Daemon
@@ -39,6 +75,8 @@ Run 'oss-indexer [command] -h' for more details on each command.`)
 }
 
 func main() {
+	loadDotEnv()
+
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
@@ -63,8 +101,14 @@ func main() {
 
 	switch command {
 	case "daemon":
+		defaultPort := 43770
+		if pEnv := os.Getenv("PORT"); pEnv != "" {
+			if p, err := strconv.Atoi(pEnv); err == nil {
+				defaultPort = p
+			}
+		}
 		fs := flag.NewFlagSet("daemon", flag.ExitOnError)
-		port := fs.Int("port", 43770, "HTTP MCP server port")
+		port := fs.Int("port", defaultPort, "HTTP MCP server port")
 		intervalStr := fs.String("interval", "15m", "Polling interval (e.g. 15m, 1h)")
 		pull := fs.Bool("pull", true, "Automatically git pull before indexing")
 		project := fs.String("project", "", "Target project ID from catalog")
@@ -269,8 +313,14 @@ func main() {
 		fmt.Println()
 
 	case "run":
+		defaultPort := 43770
+		if pEnv := os.Getenv("PORT"); pEnv != "" {
+			if p, err := strconv.Atoi(pEnv); err == nil {
+				defaultPort = p
+			}
+		}
 		fs := flag.NewFlagSet("run", flag.ExitOnError)
-		port := fs.Int("port", 43770, "HTTP port")
+		port := fs.Int("port", defaultPort, "HTTP port")
 		useStdio := fs.Bool("stdio", false, "Use Stdio transport instead of HTTP")
 		authToken := fs.String("auth-token", os.Getenv("OSS_INDEXER_AUTH_TOKEN"), "Secret token for HTTP auth")
 		fs.Parse(os.Args[2:])
