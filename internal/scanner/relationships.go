@@ -39,13 +39,14 @@ func collectRepoCodeText(repoPath string, maxDepth int) string {
 		}
 		for _, entry := range entries {
 			name := entry.Name()
-			if strings.HasPrefix(name, ".") || ignoredDirs[name] {
+			if (strings.HasPrefix(name, ".") && !strings.HasPrefix(name, ".env")) || ignoredDirs[name] {
 				continue
 			}
 			full := filepath.Join(currentDir, name)
 			if !entry.IsDir() {
 				ext := filepath.Ext(name)
-				if codeExtensions[ext] {
+				isEnv := strings.HasPrefix(name, ".env")
+				if codeExtensions[ext] || isEnv {
 					if info, err := entry.Info(); err == nil && info.Size() < 256*1024 {
 						if data, err := os.ReadFile(full); err == nil {
 							sb.Write(data)
@@ -107,13 +108,12 @@ func InferRelationships(repos []registry.RepoInfo, workspacePath string) []regis
 			})
 		}
 
-		// 1. Check port connections
+		// 1. Check port connections (requires network or config port context)
 		for targetPort, targetName := range repoPortMap {
 			if strings.EqualFold(targetName, repo.Name) {
 				continue
 			}
-			portStr := strconv.Itoa(targetPort)
-			if strings.Contains(combinedContent, portStr) || strings.Contains(combinedContent, ":"+portStr) {
+			if hasPortReference(combinedContent, targetPort) {
 				addEdge(repo.Name, targetName, "api_call", fmt.Sprintf("%s communicates with %s on port %d", repo.Name, targetName, targetPort))
 			}
 		}
@@ -163,24 +163,71 @@ func InferRelationships(repos []registry.RepoInfo, workspacePath string) []regis
 			strings.Contains(strings.ToLower(repo.Name), "frontend")
 
 		if isFrontend {
-			for _, target := range repos {
-				if strings.EqualFold(target.Name, repo.Name) {
-					continue
+			var gatewayRepo *registry.RepoInfo
+			for i := range repos {
+				rNameLower := strings.ToLower(repos[i].Name)
+				if strings.Contains(rNameLower, "gateway") || strings.Contains(rNameLower, "proxy") {
+					gatewayRepo = &repos[i]
+					break
 				}
-				isBackend := hasTechStack(target.TechStack, "Express", "FastAPI", "Django", "Spring Boot", "NestJS", "Gin", "Fiber", "Echo") ||
-					strings.Contains(strings.ToLower(target.Name), "be") ||
-					strings.Contains(strings.ToLower(target.Name), "backend") ||
-					strings.Contains(strings.ToLower(target.Name), "api")
+			}
 
-				if isBackend {
-					addEdge(repo.Name, target.Name, "api_call", fmt.Sprintf("%s invokes REST/GraphQL endpoints on %s", repo.Name, target.Name))
-					addEdge(repo.Name, target.Name, "depends_on", fmt.Sprintf("%s depends on %s contracts", repo.Name, target.Name))
+			if gatewayRepo != nil && !strings.EqualFold(gatewayRepo.Name, repo.Name) {
+				// With Gateway: Route frontend client requests through Gateway
+				addEdge(repo.Name, gatewayRepo.Name, "api_call", fmt.Sprintf("%s routes requests through API Gateway %s", repo.Name, gatewayRepo.Name))
+				addEdge(repo.Name, gatewayRepo.Name, "depends_on", fmt.Sprintf("%s depends on %s contracts", repo.Name, gatewayRepo.Name))
+
+				// Direct connection if frontend explicitly references a backend service or its port
+				for _, target := range repos {
+					if strings.EqualFold(target.Name, repo.Name) || strings.EqualFold(target.Name, gatewayRepo.Name) {
+						continue
+					}
+					hasDirectRef := (target.Port != nil && hasPortReference(combinedContent, *target.Port)) ||
+						strings.Contains(combinedContentLower, strings.ToLower(target.Name))
+					if hasDirectRef {
+						addEdge(repo.Name, target.Name, "api_call", fmt.Sprintf("%s invokes REST/GraphQL endpoints on %s", repo.Name, target.Name))
+						addEdge(repo.Name, target.Name, "depends_on", fmt.Sprintf("%s depends on %s contracts", repo.Name, target.Name))
+					}
+				}
+			} else {
+				// No Gateway: Connect directly to backend microservices
+				for _, target := range repos {
+					if strings.EqualFold(target.Name, repo.Name) {
+						continue
+					}
+					isBackend := hasTechStack(target.TechStack, "Express", "FastAPI", "Django", "Spring Boot", "NestJS", "Gin", "Fiber", "Echo") ||
+						strings.Contains(strings.ToLower(target.Name), "be") ||
+						strings.Contains(strings.ToLower(target.Name), "backend") ||
+						strings.Contains(strings.ToLower(target.Name), "api")
+
+					if isBackend {
+						addEdge(repo.Name, target.Name, "api_call", fmt.Sprintf("%s invokes REST/GraphQL endpoints on %s", repo.Name, target.Name))
+						addEdge(repo.Name, target.Name, "depends_on", fmt.Sprintf("%s depends on %s contracts", repo.Name, target.Name))
+					}
 				}
 			}
 		}
 	}
 
 	return relationships
+}
+
+// hasPortReference checks if a port appears in a network, URL, or configuration context.
+func hasPortReference(content string, port int) bool {
+	portStr := strconv.Itoa(port)
+	if strings.Contains(content, ":"+portStr) ||
+		strings.Contains(content, "localhost:"+portStr) ||
+		strings.Contains(content, "127.0.0.1:"+portStr) ||
+		strings.Contains(content, "0.0.0.0:"+portStr) ||
+		strings.Contains(content, "PORT="+portStr) ||
+		strings.Contains(content, "PORT = "+portStr) ||
+		strings.Contains(content, "PORT: "+portStr) ||
+		strings.Contains(content, "port="+portStr) ||
+		strings.Contains(content, "port = "+portStr) ||
+		strings.Contains(content, "port: "+portStr) {
+		return true
+	}
+	return false
 }
 
 func hasTechStack(stack []string, targets ...string) bool {

@@ -131,3 +131,83 @@ func TestScannerNestedServices(t *testing.T) {
 	}
 }
 
+func TestPortRefinementNoFalsePositive(t *testing.T) {
+	tmpWorkspace, err := os.MkdirTemp("", "port-refine-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpWorkspace)
+
+	// Service A on port 3000
+	srvA := filepath.Join(tmpWorkspace, "service-a")
+	os.MkdirAll(srvA, 0755)
+	os.WriteFile(filepath.Join(srvA, "package.json"), []byte(`{"name":"service-a","main":"index.js"}`), 0644)
+	os.WriteFile(filepath.Join(srvA, ".env"), []byte("PORT=3000\n"), 0644)
+	os.WriteFile(filepath.Join(srvA, "index.js"), []byte("const port = 3000;"), 0644)
+
+	// Service B has a setTimeout with 3000ms delay, but NO network reference to service A
+	srvB := filepath.Join(tmpWorkspace, "service-b")
+	os.MkdirAll(srvB, 0755)
+	os.WriteFile(filepath.Join(srvB, "package.json"), []byte(`{"name":"service-b","main":"index.js"}`), 0644)
+	os.WriteFile(filepath.Join(srvB, ".env"), []byte("PORT=5000\n"), 0644)
+	os.WriteFile(filepath.Join(srvB, "index.js"), []byte(`
+		function wait() {
+			setTimeout(doSomething, 3000);
+			const maxLimit = 3000;
+		}
+	`), 0644)
+
+	reg, err := ScanWorkspace(tmpWorkspace, "port-test")
+	if err != nil {
+		t.Fatalf("ScanWorkspace failed: %v", err)
+	}
+
+	for _, rel := range reg.Relationships {
+		if rel.Source == "service-b" && rel.Target == "service-a" && rel.Type == "api_call" {
+			t.Fatalf("Unexpected false positive api_call from service-b to service-a based on raw 3000 number: %+v", rel)
+		}
+	}
+}
+
+func TestMonorepoWorkspaceTraversal(t *testing.T) {
+	tmpWorkspace, err := os.MkdirTemp("", "monorepo-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpWorkspace)
+
+	// Monorepo container folder with pnpm-workspace.yaml
+	monoDir := filepath.Join(tmpWorkspace, "my-monorepo")
+	os.MkdirAll(monoDir, 0755)
+	os.WriteFile(filepath.Join(monoDir, "package.json"), []byte(`{"name":"root-monorepo","private":true,"workspaces":["packages/*"]}`), 0644)
+	os.WriteFile(filepath.Join(monoDir, "pnpm-workspace.yaml"), []byte("packages:\n  - 'packages/*'\n"), 0644)
+
+	// Sub-package 1
+	pkg1 := filepath.Join(monoDir, "packages", "pkg-core")
+	os.MkdirAll(pkg1, 0755)
+	os.WriteFile(filepath.Join(pkg1, "package.json"), []byte(`{"name":"pkg-core","main":"index.js"}`), 0644)
+
+	// Sub-package 2
+	pkg2 := filepath.Join(monoDir, "packages", "pkg-ui")
+	os.MkdirAll(pkg2, 0755)
+	os.WriteFile(filepath.Join(pkg2, "package.json"), []byte(`{"name":"pkg-ui","main":"index.js"}`), 0644)
+
+	reg, err := ScanWorkspace(tmpWorkspace, "mono-test")
+	if err != nil {
+		t.Fatalf("ScanWorkspace failed: %v", err)
+	}
+
+	names := make(map[string]bool)
+	for _, r := range reg.Repos {
+		names[r.Name] = true
+	}
+
+	if !names["pkg-core"] || !names["pkg-ui"] {
+		t.Fatalf("Expected nested packages pkg-core and pkg-ui to be discovered, found: %+v", reg.Repos)
+	}
+	if names["root-monorepo"] {
+		t.Fatalf("Monorepo container root-monorepo should not be registered as a leaf repo")
+	}
+}
+
+

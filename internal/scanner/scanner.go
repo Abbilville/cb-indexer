@@ -439,6 +439,25 @@ func matchRepo(dir string) *scannedRepoData {
 	return nil
 }
 
+// isMonorepoWorkspace checks if a directory defines a monorepo workspace container (pnpm, lerna, npm workspaces, go.work).
+func isMonorepoWorkspace(dir string) bool {
+	for _, f := range []string{"pnpm-workspace.yaml", "pnpm-workspace.yml", "lerna.json", "go.work"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err == nil {
+			return true
+		}
+	}
+	pkgPath := filepath.Join(dir, "package.json")
+	if data, err := os.ReadFile(pkgPath); err == nil {
+		var raw map[string]any
+		if err := json.Unmarshal(data, &raw); err == nil {
+			if _, ok := raw["workspaces"]; ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // ScanWorkspace inspects targetDir recursively for repositories, frameworks, ports, and inter-service relationships.
 func ScanWorkspace(targetDir string, projectID string) (*registry.ProjectRegistry, error) {
 	absDir, err := filepath.Abs(targetDir)
@@ -465,6 +484,7 @@ func ScanWorkspace(targetDir string, projectID string) (*registry.ProjectRegistr
 
 		// Check if this subdirectory is a microservice / repository
 		if dir != absDir {
+			isWorkspace := isMonorepoWorkspace(dir)
 			if match := matchRepo(dir); match != nil {
 				port := InferPort(dir)
 
@@ -487,17 +507,20 @@ func ScanWorkspace(targetDir string, projectID string) (*registry.ProjectRegistr
 					gitOrigin = "service"
 				}
 
-				repos = append(repos, registry.RepoInfo{
-					Name:        match.Name,
-					LocalPath:   strings.ReplaceAll(dir, "\\", "/"),
-					Description: match.Description,
-					TechStack:   match.TechStack,
-					EntryPoint:  match.EntryPoint,
-					Port:        port,
-					GitURL:      gitURL,
-					GitOrigin:   gitOrigin,
-				})
-				return // Found a service, do not descend deeper inside its code tree
+				if !isWorkspace {
+					repos = append(repos, registry.RepoInfo{
+						Name:        match.Name,
+						LocalPath:   strings.ReplaceAll(dir, "\\", "/"),
+						Description: match.Description,
+						TechStack:   match.TechStack,
+						EntryPoint:  match.EntryPoint,
+						Port:        port,
+						GitURL:      gitURL,
+						GitOrigin:   gitOrigin,
+					})
+					return // Found a leaf service, do not descend deeper inside its code tree
+				}
+				// Monorepo container: continue traversing subdirectories to discover nested packages
 			}
 		}
 

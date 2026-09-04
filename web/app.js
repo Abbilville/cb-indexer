@@ -349,6 +349,44 @@ function renderServices() {
   });
 }
 
+// LocalStorage Persistence for Whiteboard Node Positions
+function getNodeStorageKey(projectId) {
+  const pId = projectId || state.overview?.project_id || state.currentProject || 'default';
+  return `oss_indexer_nodes_${pId}`;
+}
+
+function loadSavedNodePositions(projectId) {
+  try {
+    const key = getNodeStorageKey(projectId);
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const obj = JSON.parse(raw);
+      state.nodePositions = new Map(Object.entries(obj));
+    }
+  } catch (err) {
+    console.error('Failed to load node positions from localStorage:', err);
+  }
+}
+
+function saveNodePositions() {
+  try {
+    if (!state.overview) return;
+    const key = getNodeStorageKey(state.overview.project_id || state.currentProject);
+    const obj = Object.fromEntries(state.nodePositions.entries());
+    localStorage.setItem(key, JSON.stringify(obj));
+  } catch (err) {
+    console.error('Failed to save node positions to localStorage:', err);
+  }
+}
+
+function clearSavedNodePositions(projectId) {
+  try {
+    const key = getNodeStorageKey(projectId);
+    localStorage.removeItem(key);
+    state.nodePositions.clear();
+  } catch (err) {}
+}
+
 // Render Interactive SVG Topology Graph (Whiteboard Mode with Curved Arcs)
 function renderTopologyGraph() {
   const svg = document.getElementById('topology-svg');
@@ -387,6 +425,11 @@ function renderTopologyGraph() {
   const bboxHeight = 720;
   const bboxX = centerX - bboxWidth / 2;
   const bboxY = centerY - bboxHeight / 2;
+
+  // Load saved positions if not already loaded in memory
+  if (state.nodePositions.size === 0) {
+    loadSavedNodePositions(state.overview.project_id || state.currentProject);
+  }
 
   // Initialize node positions in a circle within bounding box if not set
   repos.forEach((repo, i) => {
@@ -651,6 +694,9 @@ window.addEventListener('mousemove', (e) => {
 window.addEventListener('mouseup', () => {
   const svg = document.getElementById('topology-svg');
   if (svg) svg.classList.remove('panning');
+  if (state.isDragging) {
+    saveNodePositions();
+  }
   state.isPanning = false;
   state.isDragging = false;
   state.dragNode = null;
@@ -922,6 +968,7 @@ function initEvents() {
   document.getElementById('project-selector')?.addEventListener('change', (e) => {
     state.currentProject = e.target.value;
     state.nodePositions.clear();
+    loadSavedNodePositions(state.currentProject);
     loadDashboardData();
   });
 
@@ -961,8 +1008,13 @@ function initEvents() {
     state.zoomLevel = 1;
     state.panX = 0;
     state.panY = 0;
-    state.nodePositions.clear();
     renderTopologyGraph();
+  });
+
+  document.getElementById('btn-layout-reset')?.addEventListener('click', () => {
+    clearSavedNodePositions(state.overview?.project_id || state.currentProject);
+    renderTopologyGraph();
+    showToast('Node positions reset to circular layout', 'info');
   });
 
   // Scan Modal

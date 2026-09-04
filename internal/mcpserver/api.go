@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -221,7 +222,8 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 			return
 		}
 
-		ctx := r.Context()
+		jobCtx, jobCancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer jobCancel()
 		startTime := time.Now()
 
 		if req.RepoName != "" {
@@ -250,7 +252,7 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 			})
 
 			if req.Pull {
-				if _, err := gitwatcher.GitPull(ctx, fullPath); err != nil {
+				if _, err := gitwatcher.GitPull(jobCtx, fullPath); err != nil {
 					Broadcast(EventMessage{
 						Type:      "log",
 						ProjectID: reg.ProjectID,
@@ -260,7 +262,7 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 					})
 				}
 			}
-			res := cbmwrite.IndexSingleRepo(ctx, fullPath, repo.Name, mode, req.Persistence)
+			res := cbmwrite.IndexSingleRepo(jobCtx, fullPath, repo.Name, mode, req.Persistence)
 			durMs := time.Since(startTime).Milliseconds()
 
 			Broadcast(EventMessage{
@@ -311,7 +313,7 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 				baseDir = filepath.Dir(reg.SourcePath)
 			}
 			if baseDir != "" {
-				if _, err := gitwatcher.GitPull(ctx, baseDir); err != nil {
+				if _, err := gitwatcher.GitPull(jobCtx, baseDir); err != nil {
 					Broadcast(EventMessage{
 						Type:      "log",
 						ProjectID: reg.ProjectID,
@@ -326,7 +328,7 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 					fullPath = filepath.Join(baseDir, fullPath)
 				}
 				if fullPath != "" && fullPath != baseDir {
-					if _, err := gitwatcher.GitPull(ctx, fullPath); err != nil {
+					if _, err := gitwatcher.GitPull(jobCtx, fullPath); err != nil {
 						Broadcast(EventMessage{
 							Type:      "log",
 							ProjectID: reg.ProjectID,
@@ -339,7 +341,7 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 			}
 		}
 
-		report := cbmwrite.BatchIndexProjectWithProgress(ctx, reg, mode, req.Persistence, func(current, total int, repoName, status, errStr string, durMs int64) {
+		report := cbmwrite.BatchIndexProjectWithProgress(jobCtx, reg, mode, req.Persistence, func(current, total int, repoName, status, errStr string, durMs int64) {
 			Broadcast(EventMessage{
 				Type:       "progress",
 				ProjectID:  reg.ProjectID,

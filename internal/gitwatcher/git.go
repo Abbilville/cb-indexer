@@ -44,7 +44,7 @@ func GitPull(ctx context.Context, repoPath string) (bool, error) {
 	execCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(execCtx, "git", "pull")
+	cmd := exec.CommandContext(execCtx, "git", "pull", "--ff-only")
 	cmd.Dir = repoPath
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	var outBuf, errBuf bytes.Buffer
