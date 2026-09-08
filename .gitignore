@@ -22,7 +22,7 @@ Thumbs.db
 # Logs and runtime caches
 logs/
 *.log
-.oss-indexer/
+.cb-indexer/
 .codebase-memory/
 .cache/
 

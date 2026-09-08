@@ -36,9 +36,9 @@ jobs:
       - name: Build Binaries
         run: |
           mkdir -p dist
-          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/oss-indexer-linux-amd64 ./cmd/oss-indexer
-          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/oss-indexer-darwin-arm64 ./cmd/oss-indexer
-          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/oss-indexer-windows-amd64.exe ./cmd/oss-indexer
+          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/cb-indexer-linux-amd64 ./cmd/cb-indexer
+          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/cb-indexer-darwin-arm64 ./cmd/cb-indexer
+          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/cb-indexer-windows-amd64.exe ./cmd/cb-indexer
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

@@ -1,20 +1,20 @@
 services:
-  oss-indexer:
+  cb-indexer:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: oss-indexer
+    container_name: cb-indexer
     restart: unless-stopped
     ports:
       - "43770:43770"
     environment:
       - PORT=43770
-      - OSS_INDEXER_AUTH_TOKEN=${OSS_INDEXER_AUTH_TOKEN:-}
+      - CB_INDEXER_AUTH_TOKEN=${CB_INDEXER_AUTH_TOKEN:-${OSS_INDEXER_AUTH_TOKEN:-}}
     volumes:
       - ./data:/app/data
-      - oss-indexer-cache:/root/.cache/codebase-memory-mcp
-      - oss-indexer-config:/root/.config/oss-mcp
+      - cb-indexer-cache:/root/.cache/codebase-memory-mcp
+      - cb-indexer-config:/root/.config/oss-mcp
 
 volumes:
-  oss-indexer-cache:
-  oss-indexer-config:
+  cb-indexer-cache:
+  cb-indexer-config:
