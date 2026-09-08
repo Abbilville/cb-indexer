@@ -12,17 +12,25 @@ import (
 	"syscall"
 	"time"
 
-	"oss-indexer/internal/cbmwrite"
-	"oss-indexer/internal/gitwatcher"
-	"oss-indexer/internal/graphmeta"
-	"oss-indexer/internal/mcpserver"
-	"oss-indexer/internal/registry"
-	"oss-indexer/internal/scanner"
-	"oss-indexer/internal/workflows"
+	"cb-indexer/internal/cbmwrite"
+	"cb-indexer/internal/gitwatcher"
+	"cb-indexer/internal/graphmeta"
+	"cb-indexer/internal/mcpserver"
+	"cb-indexer/internal/registry"
+	"cb-indexer/internal/scanner"
+	"cb-indexer/internal/workflows"
 )
 
 // loadDotEnv parses key-value pairs from a local .env file into the process environment
 // if the variable is not already defined in the OS environment.
+
+func getAuthTokenEnv() string {
+	if t := os.Getenv("CB_INDEXER_AUTH_TOKEN"); t != "" {
+		return t
+	}
+	return os.Getenv("OSS_INDEXER_AUTH_TOKEN")
+}
+
 func loadDotEnv() {
 	candidates := []string{".env"}
 	if exe, err := os.Executable(); err == nil {
@@ -57,10 +65,10 @@ func loadDotEnv() {
 }
 
 func printHelp() {
-	fmt.Println(`oss-indexer — Repository Architecture Hub & Ingestion Daemon
+	fmt.Println(`cb-indexer — Repository Architecture Hub & Ingestion Daemon
 
 Usage:
-  oss-indexer [command] [options]
+  cb-indexer [command] [options]
 
 Commands:
   daemon      Start background indexing daemon & HTTP MCP server
@@ -71,7 +79,7 @@ Commands:
   status      Show indexing status, daemon health, and logs
   run         Run MCP server (HTTP or stdio)
 
-Run 'oss-indexer [command] -h' for more details on each command.`)
+Run 'cb-indexer [command] -h' for more details on each command.`)
 }
 
 func main() {
@@ -89,7 +97,7 @@ func main() {
 				port = p
 			}
 		}
-		authToken := os.Getenv("OSS_INDEXER_AUTH_TOKEN")
+		authToken := getAuthTokenEnv()
 		if err := mcpserver.ServeHTTP(ctx, srv, port, authToken); err != nil {
 			fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
 			os.Exit(1)
@@ -114,7 +122,7 @@ func main() {
 		project := fs.String("project", "", "Target project ID from catalog")
 		regPath := fs.String("registry", "", "Path to custom registry.yaml")
 		mode := fs.String("mode", "moderate", "Indexing mode: moderate, full, fast")
-		authToken := fs.String("auth-token", os.Getenv("OSS_INDEXER_AUTH_TOKEN"), "Secret token for HTTP auth")
+		authToken := fs.String("auth-token", getAuthTokenEnv(), "Secret token for HTTP auth")
 		fs.Parse(os.Args[2:])
 
 		interval, err := time.ParseDuration(*intervalStr)
@@ -134,7 +142,7 @@ func main() {
 			}
 		}()
 
-		fmt.Printf("[oss-indexer] Daemon started (interval: %v, auto-pull: %v, mode: %s)\n", interval, *pull, *mode)
+		fmt.Printf("[cb-indexer] Daemon started (interval: %v, auto-pull: %v, mode: %s)\n", interval, *pull, *mode)
 		if err := gitwatcher.RunDaemon(ctx, interval, *pull, target, *mode); err != nil && err != context.Canceled {
 			fmt.Fprintf(os.Stderr, "[ERROR] Daemon loop: %v\n", err)
 			os.Exit(1)
@@ -254,7 +262,7 @@ func main() {
 		fs.Parse(os.Args[2:])
 
 		if fs.NArg() == 0 {
-			fmt.Println("Usage: oss-indexer remove <project_id_or_registry_path>")
+			fmt.Println("Usage: cb-indexer remove <project_id_or_registry_path>")
 			os.Exit(1)
 		}
 		target := fs.Arg(0)
@@ -288,7 +296,7 @@ func main() {
 
 	case "status":
 		report := gitwatcher.CheckIndexStatus("")
-		fmt.Printf("\n=== oss-indexer Operational Status ===\n")
+		fmt.Printf("\n=== cb-indexer Operational Status ===\n")
 		fmt.Printf("Active Projects: %d\n", report.ActiveProjects)
 		if report.LastRun != nil {
 			fmt.Printf("Last Run:        %s\n", report.LastRun.Format(time.RFC3339))
@@ -322,7 +330,7 @@ func main() {
 		fs := flag.NewFlagSet("run", flag.ExitOnError)
 		port := fs.Int("port", defaultPort, "HTTP port")
 		useStdio := fs.Bool("stdio", false, "Use Stdio transport instead of HTTP")
-		authToken := fs.String("auth-token", os.Getenv("OSS_INDEXER_AUTH_TOKEN"), "Secret token for HTTP auth")
+		authToken := fs.String("auth-token", getAuthTokenEnv(), "Secret token for HTTP auth")
 		fs.Parse(os.Args[2:])
 
 		srv := mcpserver.NewServer()

@@ -131,7 +131,7 @@ func IndexSingleRepo(ctx context.Context, repoPath, repoName, mode string, persi
 
 	start := time.Now()
 	timeStr := start.Format("15:04:05")
-	fmt.Printf("[%s] [oss-indexer] 🚀 Indexing repository '%s' (path: %s, mode: %s)...\n", timeStr, repoName, normalizedPath, mode)
+	fmt.Printf("[%s] [cb-indexer] 🚀 Indexing repository '%s' (path: %s, mode: %s)...\n", timeStr, repoName, normalizedPath, mode)
 
 	execCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
@@ -154,7 +154,7 @@ func IndexSingleRepo(ctx context.Context, repoPath, repoName, mode string, persi
 		if errStr == "" {
 			errStr = err.Error()
 		}
-		fmt.Printf("[%s] [oss-indexer] ✗ Failed indexing '%s' after %v: %s\n", time.Now().Format("15:04:05"), repoName, dur, errStr)
+		fmt.Printf("[%s] [cb-indexer] ✗ Failed indexing '%s' after %v: %s\n", time.Now().Format("15:04:05"), repoName, dur, errStr)
 		return RepoIndexResult{
 			Name:   repoName,
 			Path:   normalizedPath,
@@ -163,7 +163,7 @@ func IndexSingleRepo(ctx context.Context, repoPath, repoName, mode string, persi
 		}
 	}
 
-	fmt.Printf("[%s] [oss-indexer] ✓ Successfully indexed '%s' in %v\n", time.Now().Format("15:04:05"), repoName, dur)
+	fmt.Printf("[%s] [cb-indexer] ✓ Successfully indexed '%s' in %v\n", time.Now().Format("15:04:05"), repoName, dur)
 	return RepoIndexResult{
 		Name:   repoName,
 		Path:   normalizedPath,

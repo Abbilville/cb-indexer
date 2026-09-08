@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"oss-indexer/internal/graphmeta"
-	"oss-indexer/internal/registry"
+	"cb-indexer/internal/graphmeta"
+	"cb-indexer/internal/registry"
 )
 
 // BatchIndexReport contains aggregated statistics and individual repo index results.

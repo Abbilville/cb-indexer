@@ -9,14 +9,14 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"oss-indexer/web"
+	"cb-indexer/web"
 )
 
-// NewServer creates and configures the oss-indexer MCP server instance.
+// NewServer creates and configures the cb-indexer MCP server instance.
 func NewServer() *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{
-		Name:    "oss-indexer",
-		Version: "0.2.0",
+		Name:    "cb-indexer",
+		Version: "0.1.0",
 	}, nil)
 
 	RegisterTools(s)
@@ -49,7 +49,7 @@ func ServeHTTP(ctx context.Context, s *mcp.Server, port int, authToken string) e
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		authRequired := authToken != ""
-		_, _ = w.Write([]byte(fmt.Sprintf(`{"status":"healthy","service":"oss-indexer","auth_required":%t}`, authRequired)))
+		_, _ = w.Write([]byte(fmt.Sprintf(`{"status":"healthy","service":"cb-indexer","auth_required":%t}`, authRequired)))
 	})
 
 	// 3. REST API Endpoints for Dashboard & Standalone Clients
@@ -82,12 +82,12 @@ func ServeHTTP(ctx context.Context, s *mcp.Server, port int, authToken string) e
 		_ = server.Shutdown(context.Background())
 	}()
 
-	fmt.Printf("[oss-indexer] Dashboard UI:    http://127.0.0.1:%d/\n", port)
-	fmt.Printf("[oss-indexer] MCP HTTP Server: http://127.0.0.1:%d/mcp\n", port)
+	fmt.Printf("[cb-indexer] Dashboard UI:    http://127.0.0.1:%d/\n", port)
+	fmt.Printf("[cb-indexer] MCP HTTP Server: http://127.0.0.1:%d/mcp\n", port)
 	if authToken != "" {
-		fmt.Printf("[oss-indexer] Auth Status:     ENABLED (API & Dashboard require token)\n")
+		fmt.Printf("[cb-indexer] Auth Status:     ENABLED (API & Dashboard require token)\n")
 	} else {
-		fmt.Printf("[oss-indexer] Auth Status:     DISABLED (Open local development mode)\n")
+		fmt.Printf("[cb-indexer] Auth Status:     DISABLED (Open local development mode)\n")
 	}
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return err

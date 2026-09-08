@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"oss-indexer/internal/cbmwrite"
-	"oss-indexer/internal/graphmeta"
-	"oss-indexer/internal/registry"
+	"cb-indexer/internal/cbmwrite"
+	"cb-indexer/internal/graphmeta"
+	"cb-indexer/internal/registry"
 )
 
 // DaemonStatusReport describes the operational state of the indexing daemon.

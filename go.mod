@@ -1,4 +1,4 @@
-module oss-indexer
+module cb-indexer
 
 go 1.25.0
 

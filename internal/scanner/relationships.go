@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"oss-indexer/internal/registry"
+	"cb-indexer/internal/registry"
 )
 
 var codeExtensions = map[string]bool{

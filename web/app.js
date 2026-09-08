@@ -1,5 +1,5 @@
 /**
- * oss-indexer Web Dashboard Controller
+ * cb-indexer Web Dashboard Controller
  */
 
 // Application State

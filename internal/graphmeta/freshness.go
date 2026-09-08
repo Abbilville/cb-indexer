@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"oss-indexer/internal/registry"
-	"oss-indexer/internal/scanner"
+	"cb-indexer/internal/registry"
+	"cb-indexer/internal/scanner"
 )
 
 // RepoIndexInfo represents the indexing status for a single repository.

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"oss-indexer/internal/registry"
+	"cb-indexer/internal/registry"
 )
 
 var nodeLibMap = map[string]string{

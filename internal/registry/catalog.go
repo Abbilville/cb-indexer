@@ -8,13 +8,21 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// GetUserConfigDir returns the default config directory path ~/.config/oss-mcp.
+// GetUserConfigDir returns the default config directory path ~/.config/cb-mcp (fallback: ~/.config/oss-mcp).
 func GetUserConfigDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		home = "."
 	}
-	return filepath.Join(home, ".config", "oss-mcp")
+	newPath := filepath.Join(home, ".config", "cb-mcp")
+	legacyPath := filepath.Join(home, ".config", "oss-mcp")
+	if _, err := os.Stat(newPath); err == nil {
+		return newPath
+	}
+	if _, err := os.Stat(legacyPath); err == nil {
+		return legacyPath
+	}
+	return newPath
 }
 
 // GetUserProjectsCatalogPath returns the default machine catalog path (honoring MCP_PROJECTS_CATALOG override).

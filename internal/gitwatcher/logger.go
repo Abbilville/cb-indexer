@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"oss-indexer/internal/registry"
+	"cb-indexer/internal/registry"
 )
 
 // IndexRunLog represents a recorded indexing run in the inspectable log file.
@@ -29,9 +29,9 @@ func GetLogFilePath() string {
 	configDir := registry.GetUserConfigDir()
 	logDir := filepath.Join(configDir, "logs")
 	if err := os.MkdirAll(logDir, 0755); err != nil {
-		// Fallback to local .oss-indexer/
-		_ = os.MkdirAll(".oss-indexer", 0755)
-		return filepath.Join(".oss-indexer", "indexer.log")
+		// Fallback to local .cb-indexer/
+		_ = os.MkdirAll(".cb-indexer", 0755)
+		return filepath.Join(".cb-indexer", "indexer.log")
 	}
 	return filepath.Join(logDir, "indexer.log")
 }

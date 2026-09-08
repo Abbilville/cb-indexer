@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"oss-indexer/internal/cbmwrite"
-	"oss-indexer/internal/registry"
-	"oss-indexer/internal/scanner"
+	"cb-indexer/internal/cbmwrite"
+	"cb-indexer/internal/registry"
+	"cb-indexer/internal/scanner"
 )
 
 // OnboardReport contains the combined result of scanning, registry generation, and batch indexing.
