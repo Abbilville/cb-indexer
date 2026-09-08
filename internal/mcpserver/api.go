@@ -9,15 +9,16 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"oss-indexer/internal/cbmwrite"
-	"oss-indexer/internal/gitwatcher"
-	"oss-indexer/internal/graphmeta"
-	"oss-indexer/internal/registry"
-	"oss-indexer/internal/scanner"
+	"cb-indexer/internal/cbmwrite"
+	"cb-indexer/internal/gitwatcher"
+	"cb-indexer/internal/graphmeta"
+	"cb-indexer/internal/registry"
+	"cb-indexer/internal/scanner"
 )
 
 var (
@@ -588,6 +589,130 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status": "success",
 			"path":   cleanPath,
+		})
+	})
+
+	// 9. GET /api/rag/search (Remote AST symbol search across indexed SQLite graphs)
+	mux.HandleFunc("/api/rag/search", func(w http.ResponseWriter, r *http.Request) {
+		if !checkAuth(r, authToken) {
+			writeError(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+
+		query := r.URL.Query().Get("q")
+		repo := r.URL.Query().Get("repo")
+		label := r.URL.Query().Get("label")
+		limitStr := r.URL.Query().Get("limit")
+
+		limit := 25
+		if limitStr != "" {
+			if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+				limit = l
+			}
+		}
+
+		symbols, err := graphmeta.SearchGlobalSymbols(query, repo, label, limit)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "Search failed: "+err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":  "success",
+			"query":   query,
+			"repo":    repo,
+			"label":   label,
+			"total":   len(symbols),
+			"symbols": symbols,
+		})
+	})
+
+	// 10. GET /api/rag/context (Remote source code snippet slice for symbol context)
+	mux.HandleFunc("/api/rag/context", func(w http.ResponseWriter, r *http.Request) {
+		if !checkAuth(r, authToken) {
+			writeError(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+
+		projectParam := r.URL.Query().Get("project")
+		repoName := r.URL.Query().Get("repo")
+		filePath := r.URL.Query().Get("file")
+		startStr := r.URL.Query().Get("start")
+		endStr := r.URL.Query().Get("end")
+		paddingStr := r.URL.Query().Get("padding")
+
+		if repoName == "" || filePath == "" {
+			writeError(w, http.StatusBadRequest, "repo and file parameters are required")
+			return
+		}
+
+		startLine := 1
+		if startStr != "" {
+			if s, err := strconv.Atoi(startStr); err == nil && s > 0 {
+				startLine = s
+			}
+		}
+		endLine := startLine + 30
+		if endStr != "" {
+			if e, err := strconv.Atoi(endStr); err == nil && e >= startLine {
+				endLine = e
+			}
+		}
+		padding := 3
+		if paddingStr != "" {
+			if p, err := strconv.Atoi(paddingStr); err == nil && p >= 0 {
+				padding = p
+			}
+		}
+
+		if projectParam == "" {
+			avail := registry.ListAvailableProjects()
+			if len(avail) > 0 {
+				projectParam = avail[0].ProjectID
+			}
+		}
+
+		reg, err := registry.LoadRegistry(projectParam)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "Failed to load project: "+err.Error())
+			return
+		}
+
+		repo := reg.GetRepo(repoName)
+		if repo == nil {
+			writeError(w, http.StatusNotFound, fmt.Sprintf("Repository '%s' not found in project '%s'", repoName, reg.ProjectID))
+			return
+		}
+
+		baseDir := ""
+		if reg.SourcePath != "" {
+			baseDir = filepath.Dir(reg.SourcePath)
+		}
+		absRepoPath := repo.LocalPath
+		if absRepoPath != "" && !filepath.IsAbs(absRepoPath) && baseDir != "" {
+			absRepoPath = filepath.Join(baseDir, absRepoPath)
+		}
+
+		snippet, err := graphmeta.GetCodeSnippet(absRepoPath, filePath, startLine, endLine, padding)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "Failed to read code snippet: "+err.Error())
+			return
+		}
+		snippet.Project = repo.Name
+
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":  "success",
+			"project": reg.ProjectID,
+			"repo":    repo.Name,
+			"context": snippet,
 		})
 	})
 }

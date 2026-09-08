@@ -10,12 +10,12 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"oss-indexer/internal/cbmwrite"
-	"oss-indexer/internal/gitwatcher"
-	"oss-indexer/internal/graphmeta"
-	"oss-indexer/internal/registry"
-	"oss-indexer/internal/scanner"
-	"oss-indexer/internal/workflows"
+	"cb-indexer/internal/cbmwrite"
+	"cb-indexer/internal/gitwatcher"
+	"cb-indexer/internal/graphmeta"
+	"cb-indexer/internal/registry"
+	"cb-indexer/internal/scanner"
+	"cb-indexer/internal/workflows"
 )
 
 // Tool Input Structs
@@ -58,6 +58,21 @@ type RemoveProjectInput struct {
 	Project        string `json:"project" jsonschema:"Project ID or file path to registry.yaml"`
 	PurgeGraphs    *bool  `json:"purge_graphs,omitempty" jsonschema:"Whether to purge codebase-memory-mcp graph databases (default: true)"`
 	DeleteManifest *bool  `json:"delete_manifest,omitempty" jsonschema:"Whether to delete registry.yaml manifest from disk (default: true)"`
+}
+
+type QuerySymbolsInput struct {
+	Query    string `json:"query" jsonschema:"Symbol name or pattern to search (e.g. 'CheckoutHandler', 'getUser')"`
+	RepoName string `json:"repo_name,omitempty" jsonschema:"Optional repository name to narrow search"`
+	Label    string `json:"label,omitempty" jsonschema:"Optional AST node type ('Function', 'Method', 'Struct', 'Class')"`
+	Limit    int    `json:"limit,omitempty" jsonschema:"Max symbols to return (default: 20)"`
+}
+
+type SymbolContextInput struct {
+	RepoName  string `json:"repo_name" jsonschema:"Repository name owning the symbol"`
+	FilePath  string `json:"file_path" jsonschema:"File path relative to repository root"`
+	StartLine int    `json:"start_line,omitempty" jsonschema:"Starting line number"`
+	EndLine   int    `json:"end_line,omitempty" jsonschema:"Ending line number"`
+	Project   string `json:"project,omitempty" jsonschema:"Optional project ID"`
 }
 
 func RegisterTools(s *mcp.Server) {
@@ -353,6 +368,64 @@ func RegisterTools(s *mcp.Server) {
 			"manifest_deleted":           manifestDeleted,
 			"graph_purge_report":         purgeReport,
 		}), nil, nil
+	})
+
+	// Tool 11: query_codebase_symbols
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "query_codebase_symbols",
+		Description: "Search indexed AST symbols across microservices (functions, methods, classes, structs).",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input QuerySymbolsInput) (*mcp.CallToolResult, any, error) {
+		limit := input.Limit
+		if limit <= 0 {
+			limit = 20
+		}
+		syms, err := graphmeta.SearchGlobalSymbols(input.Query, input.RepoName, input.Label, limit)
+		if err != nil {
+			return errorResult(err), nil, nil
+		}
+		return jsonResult(map[string]any{
+			"query":   input.Query,
+			"repo":    input.RepoName,
+			"total":   len(syms),
+			"symbols": syms,
+		}), nil, nil
+	})
+
+	// Tool 12: get_symbol_context
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "get_symbol_context",
+		Description: "Retrieve source code context snippet around a file line range from a repository.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input SymbolContextInput) (*mcp.CallToolResult, any, error) {
+		reg, err := registry.LoadRegistry(input.Project)
+		if err != nil {
+			return errorResult(err), nil, nil
+		}
+		repo := reg.GetRepo(input.RepoName)
+		if repo == nil {
+			return errorResult(fmt.Errorf("repository '%s' not found", input.RepoName)), nil, nil
+		}
+		baseDir := ""
+		if reg.SourcePath != "" {
+			baseDir = filepath.Dir(reg.SourcePath)
+		}
+		absRepoPath := repo.LocalPath
+		if absRepoPath != "" && !filepath.IsAbs(absRepoPath) && baseDir != "" {
+			absRepoPath = filepath.Join(baseDir, absRepoPath)
+		}
+		start := input.StartLine
+		if start <= 0 {
+			start = 1
+		}
+		end := input.EndLine
+		if end < start {
+			end = start + 30
+		}
+		snippet, err := graphmeta.GetCodeSnippet(absRepoPath, input.FilePath, start, end, 3)
+		if err != nil {
+			return errorResult(err), nil, nil
+		}
+		snippet.Project = repo.Name
+		return jsonResult(snippet), nil, nil
 	})
 }
 
