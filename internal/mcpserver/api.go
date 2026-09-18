@@ -1,9 +1,11 @@
 package mcpserver
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -821,6 +823,237 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 			return
 		}
 		writeJSON(w, http.StatusOK, payload)
+	})
+
+	// 12. POST /api/ai/chat (Proxy for AI chat queries with graph context)
+	mux.HandleFunc("/api/ai/chat", func(w http.ResponseWriter, r *http.Request) {
+		if !checkAuth(r, authToken) {
+			writeError(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+
+		var req struct {
+			Provider     string   `json:"provider"`
+			APIKey       string   `json:"api_key"`
+			Model        string   `json:"model"`
+			BaseURL      string   `json:"base_url"`
+			SystemPrompt string   `json:"system_prompt"`
+			Temperature  *float64 `json:"temperature"`
+			Messages     []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "Invalid request body: "+err.Error())
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+		defer cancel()
+
+		client := &http.Client{Timeout: 90 * time.Second}
+
+		switch req.Provider {
+		case "gemini":
+			if req.APIKey == "" {
+				writeError(w, http.StatusBadRequest, "API Key is required for Gemini")
+				return
+			}
+			model := req.Model
+			if model == "" {
+				model = "gemini-2.5-flash"
+			}
+			url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s",
+				model, req.APIKey)
+
+			var contents []map[string]any
+			for _, m := range req.Messages {
+				role := "user"
+				if m.Role == "assistant" {
+					role = "model"
+				}
+				contents = append(contents, map[string]any{
+					"role":  role,
+					"parts": []map[string]string{{"text": m.Content}},
+				})
+			}
+
+			payload := map[string]any{
+				"systemInstruction": map[string]any{
+					"parts": []map[string]string{{"text": req.SystemPrompt}},
+				},
+				"contents": contents,
+			}
+			bodyBytes, _ := json.Marshal(payload)
+			httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(bodyBytes))
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			httpReq.Header.Set("Content-Type", "application/json")
+
+			resp, err := client.Do(httpReq)
+			if err != nil {
+				writeError(w, http.StatusBadGateway, err.Error())
+				return
+			}
+			defer resp.Body.Close()
+
+			respBytes, _ := io.ReadAll(resp.Body)
+			if resp.StatusCode != http.StatusOK {
+				writeError(w, resp.StatusCode, string(respBytes))
+				return
+			}
+
+			var geminiResp struct {
+				Candidates []struct {
+					Content struct {
+						Parts []struct {
+							Text string `json:"text"`
+						} `json:"parts"`
+					} `json:"content"`
+				} `json:"candidates"`
+			}
+			if err := json.Unmarshal(respBytes, &geminiResp); err == nil && len(geminiResp.Candidates) > 0 && len(geminiResp.Candidates[0].Content.Parts) > 0 {
+				writeJSON(w, http.StatusOK, map[string]string{"response": geminiResp.Candidates[0].Content.Parts[0].Text})
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "Failed to parse Gemini response")
+			return
+
+		case "claude":
+			if req.APIKey == "" {
+				writeError(w, http.StatusBadRequest, "API Key is required for Claude")
+				return
+			}
+			model := req.Model
+			if model == "" {
+				model = "claude-3-5-sonnet-20241022"
+			}
+			url := "https://api.anthropic.com/v1/messages"
+			var claudeMessages []map[string]string
+			for _, m := range req.Messages {
+				claudeMessages = append(claudeMessages, map[string]string{
+					"role":    m.Role,
+					"content": m.Content,
+				})
+			}
+
+			payload := map[string]any{
+				"model":      model,
+				"max_tokens": 2048,
+				"system":     req.SystemPrompt,
+				"messages":   claudeMessages,
+			}
+			bodyBytes, _ := json.Marshal(payload)
+			httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(bodyBytes))
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			httpReq.Header.Set("Content-Type", "application/json")
+			httpReq.Header.Set("x-api-key", req.APIKey)
+			httpReq.Header.Set("anthropic-version", "2023-06-01")
+
+			resp, err := client.Do(httpReq)
+			if err != nil {
+				writeError(w, http.StatusBadGateway, err.Error())
+				return
+			}
+			defer resp.Body.Close()
+
+			respBytes, _ := io.ReadAll(resp.Body)
+			if resp.StatusCode != http.StatusOK {
+				writeError(w, resp.StatusCode, string(respBytes))
+				return
+			}
+
+			var claudeResp struct {
+				Content []struct {
+					Text string `json:"text"`
+				} `json:"content"`
+			}
+			if err := json.Unmarshal(respBytes, &claudeResp); err == nil && len(claudeResp.Content) > 0 {
+				writeJSON(w, http.StatusOK, map[string]string{"response": claudeResp.Content[0].Text})
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "Failed to parse Claude response")
+			return
+
+		default:
+			// OpenAI or Custom OpenAI-compatible
+			baseUrl := req.BaseURL
+			if baseUrl == "" {
+				baseUrl = "https://api.openai.com/v1"
+			}
+			url := fmt.Sprintf("%s/chat/completions", strings.TrimRight(baseUrl, "/"))
+
+			var openAiMessages []map[string]string
+			if req.SystemPrompt != "" {
+				openAiMessages = append(openAiMessages, map[string]string{
+					"role":    "system",
+					"content": req.SystemPrompt,
+				})
+			}
+			for _, m := range req.Messages {
+				openAiMessages = append(openAiMessages, map[string]string{
+					"role":    m.Role,
+					"content": m.Content,
+				})
+			}
+
+			model := req.Model
+			if model == "" {
+				model = "gpt-4o"
+			}
+			payload := map[string]any{
+				"model":    model,
+				"messages": openAiMessages,
+			}
+			bodyBytes, _ := json.Marshal(payload)
+			httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(bodyBytes))
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			httpReq.Header.Set("Content-Type", "application/json")
+			if req.APIKey != "" {
+				httpReq.Header.Set("Authorization", "Bearer "+req.APIKey)
+			}
+
+			resp, err := client.Do(httpReq)
+			if err != nil {
+				writeError(w, http.StatusBadGateway, err.Error())
+				return
+			}
+			defer resp.Body.Close()
+
+			respBytes, _ := io.ReadAll(resp.Body)
+			if resp.StatusCode != http.StatusOK {
+				writeError(w, resp.StatusCode, string(respBytes))
+				return
+			}
+
+			var openAiResp struct {
+				Choices []struct {
+					Message struct {
+						Content string `json:"content"`
+					} `json:"message"`
+				} `json:"choices"`
+			}
+			if err := json.Unmarshal(respBytes, &openAiResp); err == nil && len(openAiResp.Choices) > 0 {
+				writeJSON(w, http.StatusOK, map[string]string{"response": openAiResp.Choices[0].Message.Content})
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "Failed to parse OpenAI response")
+			return
+		}
 	})
 }
 

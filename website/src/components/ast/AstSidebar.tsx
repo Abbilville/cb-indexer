@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { GraphNode, GraphPayload } from '../../types/graph';
 import { RepoDetail } from '../../types/project';
 import { ProjectTreeView } from './ProjectTreeView';
+import { AstAskTab } from './AstAskTab';
 import { getNodeColor, getEdgeColor } from '../graph/utils';
 import {
   SlidersHorizontal,
@@ -13,6 +14,7 @@ import {
   Database,
   Search,
   X,
+  Sparkles,
 } from 'lucide-react';
 
 interface AstSidebarProps {
@@ -32,6 +34,7 @@ interface AstSidebarProps {
   onChangeSearchQuery: (q: string) => void;
   selectedNode: GraphNode | null;
   onSelectNode: (node: GraphNode) => void;
+  onClearSelectedNode?: () => void;
   edgeThickness?: number;
   onChangeEdgeThickness?: (thickness: number) => void;
   edgeOpacity?: number;
@@ -59,6 +62,7 @@ export function AstSidebar({
   onChangeSearchQuery,
   selectedNode,
   onSelectNode,
+  onClearSelectedNode,
   edgeThickness = 2.5,
   onChangeEdgeThickness,
   edgeOpacity = 0.75,
@@ -68,7 +72,7 @@ export function AstSidebar({
   nodeOpacity = 1.0,
   onChangeNodeOpacity,
 }: AstSidebarProps) {
-  const [activeTab, setActiveTab] = useState<'filters' | 'tree'>('filters');
+  const [activeTab, setActiveTab] = useState<'ask' | 'filters' | 'tree'>('filters');
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   const availableLabels = data?.available_labels || [];
@@ -77,7 +81,7 @@ export function AstSidebar({
   return (
     <aside
       className={`relative h-full flex flex-col bg-gray-950/80 border-r border-white/10 transition-all duration-300 z-30 shrink-0 ${
-        isCollapsed ? 'w-12' : 'w-80 sm:w-88'
+        isCollapsed ? 'w-12' : activeTab === 'ask' ? 'w-96 sm:w-[410px]' : 'w-80 sm:w-88'
       }`}
     >
       {/* Collapse/Expand Toggle Button */}
@@ -92,6 +96,18 @@ export function AstSidebar({
       {/* When Collapsed: Vertical Icon Rail */}
       {isCollapsed ? (
         <div className="flex flex-col items-center gap-4 py-6">
+          <button
+            onClick={() => {
+              setIsCollapsed(false);
+              setActiveTab('ask');
+            }}
+            className={`p-2 rounded-xl transition-colors ${
+              activeTab === 'ask' ? 'bg-purple-600 text-white shadow-md' : 'text-gray-400 hover:text-white'
+            }`}
+            title="Ask AI Assistant"
+          >
+            <Sparkles className="w-4 h-4 text-purple-300" />
+          </button>
           <button
             onClick={() => {
               setIsCollapsed(false);
@@ -145,8 +161,19 @@ export function AstSidebar({
             </div>
           </div>
 
-          {/* Dual Tabs Bar */}
-          <div className="flex items-center p-1.5 bg-black/30 border-b border-white/10 shrink-0">
+          {/* Triple Tabs Bar */}
+          <div className="flex items-center p-1.5 bg-black/30 border-b border-white/10 shrink-0 gap-1">
+            <button
+              onClick={() => setActiveTab('ask')}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                activeTab === 'ask'
+                  ? 'bg-purple-600/30 border border-purple-500/40 text-purple-200 shadow-sm'
+                  : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+              <span>Ask AI</span>
+            </button>
             <button
               onClick={() => setActiveTab('filters')}
               className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-semibold transition-all ${
@@ -171,8 +198,16 @@ export function AstSidebar({
             </button>
           </div>
 
-          {/* Tab 1: Filters */}
-          {activeTab === 'filters' ? (
+          {/* Tab 1: Ask Codebase AI Assistant */}
+          {activeTab === 'ask' ? (
+            <div className="flex-1 overflow-hidden">
+              <AstAskTab
+                graphData={data}
+                selectedNode={selectedNode}
+                onClearSelectedNode={onClearSelectedNode || (() => {})}
+              />
+            </div>
+          ) : activeTab === 'filters' ? (
             <div className="flex-1 overflow-y-auto p-3.5 space-y-4 text-xs">
               {/* Search Filter */}
               <div className="space-y-1.5">

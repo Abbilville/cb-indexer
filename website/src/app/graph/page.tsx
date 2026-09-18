@@ -247,6 +247,7 @@ function AstExplorerContent() {
             setSelectedNode(n);
             setSelectedEdge(null);
           }}
+          onClearSelectedNode={() => setSelectedNode(null)}
           edgeThickness={edgeThickness}
           onChangeEdgeThickness={setEdgeThickness}
           edgeOpacity={edgeOpacity}
