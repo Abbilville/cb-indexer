@@ -9,7 +9,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"cb-indexer/web"
+	"cb-indexer/website"
 )
 
 // NewServer creates and configures the cb-indexer MCP server instance.
@@ -56,7 +56,7 @@ func ServeHTTP(ctx context.Context, s *mcp.Server, port int, authToken string) e
 	RegisterRESTEndpoints(mux, authToken)
 
 	// 4. Embedded Web Dashboard Static Asset Serving
-	staticFS, err := fs.Sub(web.FS, ".")
+	staticFS, err := fs.Sub(website.FS, "out")
 	if err == nil {
 		fileServer := http.FileServer(http.FS(staticFS))
 		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

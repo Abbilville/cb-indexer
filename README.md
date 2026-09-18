@@ -56,18 +56,22 @@ When developers work with **AI coding assistants** (like Cursor, Claude Desktop,
 
 | Feature | Description |
 | :--- | :--- |
-| 📋 **Whiteboard Architecture Canvas** | Infinite whiteboard canvas with drag-to-pan, mouse cursor zoom, draggable nodes, and bounded workspace perimeters. |
-| 📌 **Canvas Layout Memory & Reset** | Saved node drag positions persisted in local storage across browser refreshes, with one-click **Reset Layout** button. |
-| 🌈 **Non-Overlapping Multi-Edge Arcs** | Curved quadratic Bezier arcs prevent lines from stacking when multiple routes exist between the same pair of services. |
+| 🌐 **Next.js 15 TypeScript Webview** | Modern, responsive dashboard and AST explorer built with React 19, TypeScript, and Tailwind CSS, fully embedded in the single Go binary. |
+| 📋 **Interactive Architecture Whiteboard** | Calm SVG service topology map with drag-and-drop cards, curved Bezier routing arrows, pan/zoom, and persistent layout coordinates. |
+| 🌌 **3D Galaxy AST Explorer (`/graph/`)** | Full-page 3D WebGL knowledge graph (Three.js) rendering code entities (Classes, Functions, Routes, Files) as an interactive cosmic network with visible text sprites. |
+| 🕸️ **2D Network View** | Force-directed 2D canvas with collision prevention, natural 1-hop focus glow, balanced dimming, and link relation labels. |
+| 🌳 **Left-to-Right Tree Flowchart** | Expandable hierarchical tree mapping `Projects ──► Folders ──► Files ──► Classes ──► Functions` with smooth horizontal branches. |
+| 📁 **Interactive Project Tree Sidebar** | Collapsible dual-tab sidebar featuring live Node & Edge type filters alongside an interactive, expandable codebase file tree. |
+| 🎨 **Real-Time Visual Customization** | Dynamic live sliders for **Edge Thickness** (1px–6px), **Edge Opacity** (10%–100%), **Node Size** (0.6x–2.5x), and **Node Opacity** (20%–100%). |
+| 🔎 **Symbol Search & Live Code Context** | Search AST symbols across all microservices and inspect actual source code slices directly within the dashboard. |
+| 🔗 **Interactive Connection Explorer** | Node details drawer displaying navigable lists of all inbound and outbound relations with click-to-navigate focus. |
 | 📊 **100% Project-Focused Metrics** | Real-time hero cards tracking `Total Services`, `Index Coverage`, `Total Nodes`, and `Service Connections`. |
 | 🔍 **Native Folder Browser Dialog** | Integrated OS Explorer folder selection (`Browse...`) to effortlessly register local workspaces. |
-| 🐙 **Git Origin & Source Tracing** | Automatically classifies whether a service originates from the Monorepo Root or an independent Service repo, with clean ellipsis truncation. |
 | 🗑️ **GitHub-Style Project Deletion** | Safeguarded project removal requiring typing the exact `project_id` to confirm, with automatic AST graph cache purging. |
 | 🔒 **API Token Auth & `.env` Support** | Built-in `.env` file loader, token-protected REST & MCP endpoints, with real-time status badges in the top navbar. |
 | 🔄 **Git Pull & Automatic Sync** | One-click `Git Pull & Sync All` (fast-forward safe) to pull latest commits and re-index modified files into the knowledge graph. |
 | ⚡ **Real-Time Live SSE Stream** | Watch background indexing jobs, warnings, and completions live on terminal stdout and the dashboard via Server-Sent Events (`/api/events`). |
 | 🤖 **Standard MCP Server** | Connects seamlessly with Claude Desktop, Cursor, Antigravity IDE, Cline, and Continue via HTTP or Stdio. |
-
 ---
 
 ## 🚀 Quick Start
@@ -220,44 +224,59 @@ Once connected, your AI assistant can call any of the following 11 tools autonom
 
 ---
 
-## 📋 Web Dashboard Guide
+## 📋 Web Dashboard & AST Knowledge Graph Guide
 
-### 1. Active Project Controls
-- **Project Selector**: Easily switch between registered microservice ecosystems directly above the stats cards.
-- **Project GitHub Button**: Click the GitHub badge next to the dropdown (`[ 🐙 owner/repo ↗ ]`) to jump directly to the root repository on GitHub.
-- **Scan New Project (`Browse...`)**: Click **Scan New Project** and use the **Browse...** button to open the native OS folder picker (Windows Explorer, macOS, or Linux).
-- **GitHub-Style Project Deletion (`🗑️ Delete Project`)**: Click the red delete button to decommission a project. A modal requires you to **type the exact `project_id`** to confirm deletion, preventing accidental removals, with an optional toggle to purge AST SQLite graph databases.
+`cb-indexer` features a self-contained, high-performance web dashboard built with **Next.js 15, TypeScript, and Three.js**, pre-compiled and embedded directly into the Go binary. Users who run `go install` or `go build` do not need Node.js installed on their machines.
 
-### 2. Project-Focused KPI Cards
-Directly below the action bar are 4 real-time cards focused 100% on the active project:
-1. **Total Services**: Total microservices detected, with subtext displaying the variety of detected tech stacks.
-2. **Index Coverage**: Knowledge graph indexing completeness (e.g. `6 / 8` with percentage indicator).
-3. **Total Nodes**: Total AST entities and call graph edges indexed in Codebase Memory.
-4. **Service Connections**: Total inter-service network links, routes, and dependencies.
+### 1. Main Dashboard (`/`)
+* **Service Topology Map**:
+  * Displays service cards with runtime ports, indexing health dots, and tech stack badges.
+  * Drag cards anywhere on the canvas; custom layouts are automatically remembered in your browser across sessions.
+  * Reset view, zoom controls, and **Reset to Circle** button.
+  * Non-overlapping curved Bezier routes for `routes_to`, `registers_with`, and `api_call`.
+* **Open AST Knowledge Graph Button**: Top-right button and navbar badge to jump directly into the full-page AST explorer.
+* **Service Catalog**: Search and filter services by name, port, or technology stack. Click any card to inspect AST statistics and query symbols.
+* **Action Center**: Trigger global re-indexing, execute fast-forward Git pulls across all microservices, or decommission projects.
+* **Live Activity Stream**: Real-time event log streaming daemon progress, indexing completions, and errors via Server-Sent Events.
 
-### 3. Interactive Whiteboard Topology Map
-- **Visual Legend**:
-  - `Indexed AST`: Green circular ring with hollow center.
-  - `Unindexed`: Blue circular ring with hollow center.
-  - `Gateway Route`: Solid blue directional arrow `──▶`
-  - `Service Registry`: Dashed purple directional arrow `┈┈▶`
-  - `API Call`: Dashed cyan directional arrow `┈┈▶`
-- **Canvas Persistence**: Drag nodes freely across the whiteboard. Custom node positions are automatically remembered in your browser across sessions.
-- **Reset Layout**: Click the **Reset Layout** button to restore the dynamic, non-overlapping circular layout instantly.
-- **Curved Quadratic Arcs**: Overlapping or bidirectional routes automatically curve into distinct Bezier arcs so no lines stack.
-- **Inspect Service**: Click any node on the whiteboard or card in the catalog to view inbound/outbound calls, ports, tech stacks, and trigger single-service re-indexing.
+---
 
-### 4. Service Catalog with Origin Tracing
-- Each service displays its tech stack tags, listening port, and a clickable Git source badge:
-  - `Root: owner/repo` (for monorepo services)
-  - `Service: owner/repo` (for independent service repos)
-- Long repository names automatically truncate with an **ellipsis (`...`)** to maintain a clean card grid layout.
+### 2. Dedicated AST Knowledge Graph Explorer (`/graph/`)
+Navigate to **[http://localhost:43770/graph/](http://localhost:43770/graph/)** (or click **AST Explorer** in the top navbar):
 
-### 5. Header Status & Authentication Controls
-- **Live Daemon Status Pill**: Real-time pulsing badge reflecting daemon background status.
-- **API Auth Status Indicator**: Click the **Auth** button to enter or clear your secret token, showing live verification states (Active, Token Req, Auth Failed, Auth Disabled).
-- **Refresh**: Force an immediate refresh of topology status and index metrics.
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    AST Knowledge Graph Explorer                             │
+│  [← Dashboard]       [bank-microservices2  348 nodes • 102 links]           │
+├──────────────────────────┬──────────────────────────────────────────────────┤
+│    Collapsible Sidebar   │                 Full-Screen Canvas               │
+│  [Filters] [ProjectTree] │                                                  │
+│  ─────────────────────── │  • 3D Galaxy (Three.js WebGL spatial graph)      │
+│  • Repository Selector   │  • 2D Network (Canvas D3 physics layout)         │
+│  • Symbol Search Filter  │  • Tree Flowchart (Expandable left-to-right tree)│
+│  • Edge Thickness Slider │  • Top-Right Controls:                           │
+│  • Edge Opacity Slider   │    - View mode switcher                          │
+│  • Node Size Slider      │    - Fullscreen toggle                           │
+│  • Node Opacity Slider   │    - Interactive Legend                          │
+│  • 15 Node Type Toggles  │  • Floating Node & Edge Inspector Drawers        │
+│  • 21 Edge Type Toggles  │    - Inbound & Outbound navigable connections    │
+│  • Interactive Code Tree │    - Live code snippet preview                   │
+└──────────────────────────┴──────────────────────────────────────────────────┘
+```
 
+* **Three Immersive View Modes**:
+  1. **3D Galaxy (WebGL)**: Immersive spatial network with glowing node spheres, solid directional links (`linkOpacity: 0.75`), and smooth camera flights to clicked symbols.
+  2. **2D Network (Canvas)**: Crisp 2D constellation layout with collision prevention (`d3Force`), distance-based label rendering, and smooth pan/zoom.
+  3. **Tree Flowchart**: Left-to-right expandable architectural tree (`Projects ──► Folders ──► Files ──► Classes ──► Functions`) with smooth Bezier branches and chevron indicators.
+* **1-Hop Neighborhood Focus & Balanced Dimming**:
+  * Clicking any node or selecting an item from the **Project Tree** highlights the node with a natural blue ring and highlights its 1-hop connected neighbors in cyan.
+  * Non-connected nodes and links remain subtly visible at balanced opacity, maintaining full architectural context.
+* **Interactive Node Inspector**:
+  * Displays symbol label, qualified name, and exact source file location.
+  * **Navigable Inbound & Outbound Tabs**: Lists all incoming and outgoing connections with relationship types (`CALLS`, `IMPORTS`, `DEFINES`). Clicking any neighbor immediately shifts graph focus to that node.
+  * **View Code Button**: Fetches and renders the real source code slice around the symbol directly from disk.
+* **Display & Visual Settings**:
+  * Real-time sliders in the sidebar for **Edge Thickness** (1px–6px), **Edge Opacity** (10%–100%), **Node Size** (0.6x–2.5x), and **Node Opacity** (20%–100%).
 ---
 
 ## 🔐 Authentication & Security
