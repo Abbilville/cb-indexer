@@ -715,5 +715,112 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 			"context": snippet,
 		})
 	})
+
+	// 11. GET /api/graph (2D & 3D Knowledge Graph & Topology endpoint)
+	mux.HandleFunc("/api/graph", func(w http.ResponseWriter, r *http.Request) {
+		if !checkAuth(r, authToken) {
+			writeError(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+
+		projectParam := r.URL.Query().Get("project")
+		repoParam := r.URL.Query().Get("repo")
+		scope := r.URL.Query().Get("scope") // "ast" or "topology"
+		query := r.URL.Query().Get("q")
+		limitStr := r.URL.Query().Get("limit")
+		labelsParam := r.URL.Query().Get("labels")
+		typesParam := r.URL.Query().Get("types")
+
+		limit := 250
+		if limitStr != "" {
+			if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+				limit = l
+			}
+		}
+
+		var labels []string
+		if labelsParam != "" {
+			for _, l := range strings.Split(labelsParam, ",") {
+				if trimmed := strings.TrimSpace(l); trimmed != "" {
+					labels = append(labels, trimmed)
+				}
+			}
+		}
+
+		var edgeTypes []string
+		if typesParam != "" {
+			for _, t := range strings.Split(typesParam, ",") {
+				if trimmed := strings.TrimSpace(t); trimmed != "" {
+					edgeTypes = append(edgeTypes, trimmed)
+				}
+			}
+		}
+
+		if projectParam == "" {
+			avail := registry.ListAvailableProjects()
+			if len(avail) > 0 {
+				projectParam = avail[0].ProjectID
+			}
+		}
+
+		// Topology scope:
+		if scope == "topology" || (repoParam == "" && scope != "ast") {
+			reg, err := registry.LoadRegistry(projectParam)
+			if err == nil {
+				status := graphmeta.CheckProjectStatus(reg)
+				topoGraph := graphmeta.BuildTopologyGraph(&status)
+				writeJSON(w, http.StatusOK, topoGraph)
+				return
+			}
+		}
+
+		// AST Scope:
+		if repoParam == "" || repoParam == "all" {
+			var repoNames []string
+			if reg, err := registry.LoadRegistry(projectParam); err == nil {
+				for _, r := range reg.Repos {
+					repoNames = append(repoNames, r.Name)
+				}
+			}
+
+			dbItems := graphmeta.FindAllCbmDBs(projectParam, repoNames)
+			if len(dbItems) > 0 {
+				payload, err := graphmeta.QueryMultiGraphData(dbItems, limit, labels, edgeTypes, query)
+				if err == nil {
+					writeJSON(w, http.StatusOK, payload)
+					return
+				}
+			}
+		}
+
+		// Single repo AST DB
+		dbTarget := repoParam
+		if dbTarget == "" {
+			dbTarget = projectParam
+		}
+		dbPath, err := graphmeta.FindCbmDB(dbTarget)
+		if err != nil {
+			// Fallback: If no AST DB exists, return topology graph instead of failing
+			if reg, regErr := registry.LoadRegistry(projectParam); regErr == nil {
+				status := graphmeta.CheckProjectStatus(reg)
+				topoGraph := graphmeta.BuildTopologyGraph(&status)
+				writeJSON(w, http.StatusOK, topoGraph)
+				return
+			}
+			writeError(w, http.StatusNotFound, "No graph database found: "+err.Error())
+			return
+		}
+
+		payload, err := graphmeta.QueryGraphData(dbPath, limit, labels, edgeTypes, query)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "Failed to query graph data: "+err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, payload)
+	})
 }
 

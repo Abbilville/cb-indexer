@@ -36,3 +36,7 @@ go.work
 go.work.sum
 
 system-map.*
+
+# Website dependencies and Next.js caches
+website/node_modules/
+website/.next/
