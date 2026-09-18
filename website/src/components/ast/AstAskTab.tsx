@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   AiConfig,
   ChatMessage,
   AiProvider,
-  AuthMethod,
   PROVIDER_PRESETS,
   DetectedCredential,
+  GitHubDeviceStartResponse,
 } from '../../types/ai';
 import { GraphNode, GraphPayload } from '../../types/graph';
 import { AiService } from '../../services/ai';
@@ -29,12 +29,22 @@ import {
   KeyRound,
   ShieldCheck,
   X,
+  RefreshCw,
+  ExternalLink,
 } from 'lucide-react';
 
 interface AstAskTabProps {
   graphData: GraphPayload | null;
   selectedNode: GraphNode | null;
   onClearSelectedNode: () => void;
+}
+
+interface DeviceOAuthState {
+  active: boolean;
+  userCode?: string;
+  verificationUri?: string;
+  deviceCode?: string;
+  isPolling?: boolean;
 }
 
 export function AstAskTab({
@@ -51,6 +61,15 @@ export function AstAskTab({
   const [detectedCreds, setDetectedCreds] = useState<DetectedCredential[]>([]);
   const [isLoadingCreds, setIsLoadingCreds] = useState(false);
 
+  // Model Auto-Detection
+  const [autoDetectedModels, setAutoDetectedModels] = useState<string[]>([]);
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
+
+  // GitHub Device OAuth Flow
+  const [deviceOAuth, setDeviceOAuth] = useState<DeviceOAuthState>({ active: false });
+  const [hasCopiedCode, setHasCopiedCode] = useState(false);
+
+  // Chat
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -58,11 +77,40 @@ export function AstAskTab({
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Auto-scroll chat to bottom
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
+
+  // Clean up poll timer on unmount
+  useEffect(() => {
+    return () => {
+      clearInterval(pollTimerRef.current as unknown as number);
+    };
+  }, []);
+
+  // Fetch auto-detected models from the provider endpoint
+  const loadModels = useCallback(async (provider: string, apiKey?: string, baseUrl?: string) => {
+    setIsLoadingModels(true);
+    try {
+      const res = await AiService.fetchProviderModels(provider, apiKey, baseUrl);
+      setAutoDetectedModels(res.models);
+      if (res.defaultModel) {
+        setConfig((prev) => {
+          if (!prev.model || !res.models.includes(prev.model)) {
+            const next = { ...prev, model: res.defaultModel };
+            AiService.saveConfig(next);
+            return next;
+          }
+          return prev;
+        });
+      }
+    } finally {
+      setIsLoadingModels(false);
+    }
+  }, []);
 
   // Load detected credentials from backend environment & CLI tools
   useEffect(() => {
@@ -83,6 +131,12 @@ export function AstAskTab({
       isMounted = false;
     };
   }, []);
+
+  // Auto-detect models when provider or key changes
+  useEffect(() => {
+    const key = config.authMethod === 'session' ? config.sessionToken : config.apiKey;
+    loadModels(config.provider, key, config.baseUrl);
+  }, [config.provider, config.apiKey, config.sessionToken, config.baseUrl, config.authMethod, loadModels]);
 
   // Persist config changes
   const updateConfig = (patch: Partial<AiConfig>) => {
@@ -111,21 +165,72 @@ export function AstAskTab({
     showToast(`Connected to ${cred.name} (${cred.source})`, 'success');
   };
 
+  // Start GitHub Copilot / Codex Device Code flow
+  const handleStartGitHubDeviceFlow = async () => {
+    try {
+      setDeviceOAuth({ active: true, isPolling: false });
+      const res: GitHubDeviceStartResponse = await AiService.startGitHubDeviceFlow();
+      setDeviceOAuth({
+        active: true,
+        userCode: res.user_code,
+        verificationUri: res.verification_uri,
+        deviceCode: res.device_code,
+        isPolling: true,
+      });
+
+      clearInterval(pollTimerRef.current as unknown as number);
+
+      const pollInterval = (res.interval || 5) * 1000;
+      pollTimerRef.current = setInterval(async () => {
+        try {
+          const pollRes = await AiService.pollGitHubDeviceFlow(res.device_code);
+          if (pollRes.access_token) {
+            clearInterval(pollTimerRef.current as unknown as number);
+            setDeviceOAuth({ active: false });
+            updateConfig({
+              provider: 'openai',
+              authMethod: 'session',
+              sessionToken: pollRes.access_token,
+              model: 'gpt-4o',
+            });
+            showToast('✓ Successfully logged in with GitHub Copilot!', 'success');
+            loadModels('openai', pollRes.access_token);
+          } else if (pollRes.error && pollRes.error !== 'authorization_pending') {
+            clearInterval(pollTimerRef.current as unknown as number);
+            setDeviceOAuth({ active: false });
+            showToast(`GitHub login: ${pollRes.error}`, 'error');
+          }
+        } catch {
+          // Poll retry
+        }
+      }, pollInterval);
+    } catch (err: unknown) {
+      setDeviceOAuth({ active: false });
+      const msg = err instanceof Error ? err.message : 'Failed to start GitHub login';
+      showToast(msg, 'error');
+    }
+  };
+
+  const handleCopyUserCode = (code: string) => {
+    navigator.clipboard.writeText(code);
+    setHasCopiedCode(true);
+    setTimeout(() => setHasCopiedCode(false), 3000);
+    showToast('Copied code to clipboard!', 'info');
+  };
+
   const handleSendMessage = async (customPrompt?: string) => {
     const textToSend = customPrompt || inputText.trim();
     if (!textToSend || isLoading) return;
 
-    // In direct API key mode, ensure key is present
     if (config.authMethod === 'api_key' && config.provider !== 'custom' && !config.apiKey.trim()) {
       setIsSettingsOpen(true);
       showToast(`Please enter your ${PROVIDER_PRESETS[config.provider].name} API Key`, 'warn');
       return;
     }
 
-    // In session mode, ensure token is present
     if (config.authMethod === 'session' && !config.sessionToken?.trim()) {
       setIsSettingsOpen(true);
-      showToast(`Please paste your Web Subscription Session Token`, 'warn');
+      showToast(`Please paste your Web Subscription Session Token or click Login with GitHub`, 'warn');
       return;
     }
 
@@ -174,6 +279,7 @@ export function AstAskTab({
   };
 
   const currentPreset = PROVIDER_PRESETS[config.provider] || PROVIDER_PRESETS.gemini;
+  const modelsToDisplay = autoDetectedModels.length > 0 ? autoDetectedModels : currentPreset.models;
 
   return (
     <div className="flex flex-col h-full overflow-hidden text-xs bg-gray-950/60">
@@ -201,11 +307,11 @@ export function AstAskTab({
                   {config.authMethod === 'harness'
                     ? 'Harness'
                     : config.authMethod === 'session'
-                    ? 'Subscription'
+                    ? 'OAuth/Sub'
                     : 'API Key'}
                 </span>
               </div>
-              <span className="text-[10px] text-gray-500 font-mono block truncate mt-0.5">
+              <span className="text-[10px] text-gray-400 font-mono block truncate mt-0.5">
                 {config.model}
               </span>
             </div>
@@ -241,7 +347,7 @@ export function AstAskTab({
             {/* Authentication Mode Switcher */}
             <div className="space-y-1.5">
               <label className="text-[10px] uppercase font-semibold text-gray-400 tracking-wider block">
-                Authentication & Subscription Mode
+                Authentication Mode
               </label>
               <div className="grid grid-cols-3 gap-1 bg-black/50 p-1 rounded-xl border border-white/10">
                 <button
@@ -263,10 +369,10 @@ export function AstAskTab({
                       ? 'bg-emerald-600 text-white shadow-md'
                       : 'text-gray-400 hover:text-white'
                   }`}
-                  title="Web subscription login or session token"
+                  title="OAuth login or Web subscription token"
                 >
                   <ShieldCheck className="w-3 h-3" />
-                  <span>Subscription</span>
+                  <span>OAuth / Sub</span>
                 </button>
                 <button
                   onClick={() => updateConfig({ authMethod: 'api_key' })}
@@ -294,14 +400,10 @@ export function AstAskTab({
                   {isLoadingCreds && <Loader2 className="w-3 h-3 animate-spin text-purple-400" />}
                 </div>
 
-                <p className="text-[10px] text-gray-400 leading-relaxed">
-                  Uses active credentials from your local machine, Oh My Pi harness, or CLI sessions without developer API billing.
-                </p>
-
                 <div className="space-y-1 max-h-32 overflow-y-auto pr-0.5">
                   {detectedCreds.length === 0 ? (
                     <div className="py-2 text-center text-gray-500 text-[10px]">
-                      No active CLI sessions detected. You can also use Subscription or API Key mode.
+                      No active CLI sessions detected. You can use OAuth or API Key mode.
                     </div>
                   ) : (
                     detectedCreds.map((cred, idx) => (
@@ -328,31 +430,92 @@ export function AstAskTab({
               </div>
             )}
 
-            {/* Mode 2: Web Subscription Login / Session Token */}
+            {/* Mode 2: OAuth / Web Subscription Session Token */}
             {config.authMethod === 'session' && (
-              <div className="space-y-1.5 p-2.5 rounded-xl bg-emerald-950/25 border border-emerald-500/20">
-                <label className="text-[10px] uppercase font-semibold text-emerald-300 tracking-wider block">
-                  Web Subscription Session / Access Token
-                </label>
-                <div className="relative">
-                  <input
-                    type={showSessionToken ? 'text' : 'password'}
-                    value={config.sessionToken || ''}
-                    onChange={(e) => updateConfig({ sessionToken: e.target.value })}
-                    placeholder="Paste ChatGPT Plus / Claude Pro session or Bearer token..."
-                    className="w-full pl-2.5 pr-8 py-1.5 bg-black/60 border border-emerald-500/30 rounded-xl text-xs text-gray-200 font-mono focus:outline-none focus:border-emerald-400"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowSessionToken(!showSessionToken)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
-                  >
-                    {showSessionToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  </button>
+              <div className="space-y-2.5 p-2.5 rounded-xl bg-emerald-950/25 border border-emerald-500/20">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase font-bold text-emerald-300 tracking-wider">
+                    OAuth & Subscription Login
+                  </span>
                 </div>
-                <p className="text-[9.5px] text-gray-400 leading-relaxed">
-                  Allows using your personal web subscription (ChatGPT Plus / Claude Pro) directly. Token is kept private in browser localStorage.
-                </p>
+
+                {/* 1-Click GitHub Copilot Device Flow Button */}
+                <button
+                  type="button"
+                  onClick={handleStartGitHubDeviceFlow}
+                  className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-gray-900 hover:bg-black border border-white/15 text-white font-semibold text-xs shadow-md transition-all active:scale-95"
+                >
+                  <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
+                  </svg>
+                  <span>1-Click Login with GitHub (Copilot)</span>
+                </button>
+
+                {/* Device Code Verification Popup / Box */}
+                {deviceOAuth.active && (
+                  <div className="p-3 rounded-xl bg-black/90 border border-emerald-500/40 space-y-2 animate-in fade-in">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-emerald-300 font-bold uppercase">Device Code Verification</span>
+                      <button onClick={() => setDeviceOAuth({ active: false })} className="text-gray-400 hover:text-white">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-950/40 border border-emerald-500/30">
+                      <span className="font-mono text-base font-bold text-white tracking-widest">
+                        {deviceOAuth.userCode || 'Generating...'}
+                      </span>
+                      {deviceOAuth.userCode && (
+                        <button
+                          onClick={() => handleCopyUserCode(deviceOAuth.userCode!)}
+                          className="px-2 py-1 text-[10px] font-semibold text-emerald-200 bg-emerald-600/30 rounded border border-emerald-500/40 hover:bg-emerald-600/50"
+                        >
+                          {hasCopiedCode ? 'Copied!' : 'Copy Code'}
+                        </button>
+                      )}
+                    </div>
+
+                    <a
+                      href={deviceOAuth.verificationUri || 'https://github.com/login/device'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full inline-flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition-all"
+                    >
+                      <span>Open GitHub Authorization Page</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+
+                    {deviceOAuth.isPolling && (
+                      <div className="flex items-center justify-center gap-1.5 text-[10px] text-gray-400 pt-1">
+                        <Loader2 className="w-3 h-3 animate-spin text-emerald-400" />
+                        <span>Waiting for your authorization on GitHub...</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Direct Session Token Input */}
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-semibold text-gray-400 tracking-wider block">
+                    Or Paste Web Subscription Session / Access Token
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showSessionToken ? 'text' : 'password'}
+                      value={config.sessionToken || ''}
+                      onChange={(e) => updateConfig({ sessionToken: e.target.value })}
+                      placeholder="Paste ChatGPT Plus / Claude Pro session or Bearer token..."
+                      className="w-full pl-2.5 pr-8 py-1.5 bg-black/60 border border-emerald-500/30 rounded-xl text-xs text-gray-200 font-mono focus:outline-none focus:border-emerald-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSessionToken(!showSessionToken)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+                    >
+                      {showSessionToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -394,38 +557,63 @@ export function AstAskTab({
               >
                 <option value="gemini">Google Gemini (Gemini 2.5 Flash, 1.5 Pro)</option>
                 <option value="claude">Anthropic Claude (3.5 Sonnet, 3.5 Haiku)</option>
-                <option value="openai">OpenAI / Codex (GPT-4o, o1, mini)</option>
+                <option value="openai">OpenAI / Codex / Copilot (GPT-4o, o1, mini)</option>
                 <option value="custom">Custom / Oh My Pi (Ollama, DeepSeek, Groq)</option>
               </select>
             </div>
 
-            {/* Model Selector */}
+            {/* Auto-Detected Model Selector */}
             <div className="space-y-1">
-              <label className="text-[10px] uppercase font-semibold text-gray-400 tracking-wider">
-                Model Name
-              </label>
+              <div className="flex items-center justify-between text-[10px]">
+                <span className="uppercase font-semibold text-gray-400 tracking-wider">
+                  Model Selection
+                </span>
+                <div className="flex items-center gap-1.5">
+                  {isLoadingModels ? (
+                    <span className="inline-flex items-center gap-1 text-blue-400">
+                      <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                      <span>Probing models...</span>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const key = config.authMethod === 'session' ? config.sessionToken : config.apiKey;
+                        loadModels(config.provider, key, config.baseUrl);
+                      }}
+                      className="text-gray-400 hover:text-blue-300 flex items-center gap-0.5"
+                      title="Re-probe provider models"
+                    >
+                      <RefreshCw className="w-2.5 h-2.5" />
+                      <span>{autoDetectedModels.length > 0 ? `${autoDetectedModels.length} detected` : 'Detect'}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Model Dropdown populated dynamically */}
+              <div className="relative">
+                <select
+                  value={config.model}
+                  onChange={(e) => updateConfig({ model: e.target.value })}
+                  className="w-full pl-2.5 pr-7 py-1.5 bg-black/60 border border-white/10 rounded-xl text-xs text-gray-200 font-mono focus:outline-none focus:border-blue-500 cursor-pointer truncate"
+                >
+                  {modelsToDisplay.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Custom model override */}
               <input
                 type="text"
                 value={config.model}
                 onChange={(e) => updateConfig({ model: e.target.value })}
-                placeholder={currentPreset.defaultModel}
-                className="w-full px-2.5 py-1.5 bg-black/60 border border-white/10 rounded-xl text-xs text-gray-200 font-mono focus:outline-none focus:border-blue-500"
+                placeholder="Or type custom model name..."
+                className="w-full px-2.5 py-1 bg-black/40 border border-white/5 rounded-lg text-[10.5px] text-gray-300 font-mono focus:outline-none focus:border-blue-500"
               />
-              <div className="flex flex-wrap gap-1 mt-1">
-                {currentPreset.models.map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => updateConfig({ model: m })}
-                    className={`text-[9.5px] px-1.5 py-0.2 rounded font-mono border transition-all ${
-                      config.model === m
-                        ? 'bg-blue-500/20 border-blue-500/40 text-blue-300'
-                        : 'bg-white/5 border-white/5 text-gray-400 hover:text-white'
-                    }`}
-                  >
-                    {m}
-                  </button>
-                ))}
-              </div>
             </div>
 
             {/* Custom Base URL (if custom or custom provider) */}

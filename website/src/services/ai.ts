@@ -1,4 +1,13 @@
-import { AiConfig, ChatMessage, PROVIDER_PRESETS, DetectedCredential, CredentialsResponse } from '../types/ai';
+import {
+  AiConfig,
+  ChatMessage,
+  PROVIDER_PRESETS,
+  DetectedCredential,
+  CredentialsResponse,
+  ModelsResponse,
+  GitHubDeviceStartResponse,
+  GitHubTokenResponse,
+} from '../types/ai';
 import { GraphNode, GraphPayload } from '../types/graph';
 
 const AI_CONFIG_KEY = 'cb_ai_config';
@@ -49,6 +58,64 @@ export class AiService {
     } catch {
       return [];
     }
+  }
+
+  public static async fetchProviderModels(
+    provider: string,
+    apiKey?: string,
+    baseUrl?: string
+  ): Promise<{ models: string[]; defaultModel: string }> {
+    try {
+      const bUrl = process.env.NEXT_PUBLIC_API_URL || '';
+      const params = new URLSearchParams({ provider });
+      if (apiKey) params.set('api_key', apiKey);
+      if (baseUrl) params.set('base_url', baseUrl);
+
+      const res = await fetch(`${bUrl}/api/ai/models?${params.toString()}`);
+      if (!res.ok) {
+        const fallback = PROVIDER_PRESETS[provider as keyof typeof PROVIDER_PRESETS];
+        return {
+          models: fallback?.models || [],
+          defaultModel: fallback?.defaultModel || '',
+        };
+      }
+
+      const data = (await res.json()) as ModelsResponse;
+      return {
+        models: data.models || [],
+        defaultModel: data.default || data.models?.[0] || '',
+      };
+    } catch {
+      const fallback = PROVIDER_PRESETS[provider as keyof typeof PROVIDER_PRESETS];
+      return {
+        models: fallback?.models || [],
+        defaultModel: fallback?.defaultModel || '',
+      };
+    }
+  }
+
+  public static async startGitHubDeviceFlow(): Promise<GitHubDeviceStartResponse> {
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || '';
+    const res = await fetch(`${baseUrl}/api/ai/oauth/device/start`, {
+      method: 'POST',
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to start GitHub device flow (HTTP ${res.status})`);
+    }
+    return (await res.json()) as GitHubDeviceStartResponse;
+  }
+
+  public static async pollGitHubDeviceFlow(deviceCode: string): Promise<GitHubTokenResponse> {
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || '';
+    const res = await fetch(`${baseUrl}/api/ai/oauth/device/poll`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_code: deviceCode }),
+    });
+    if (!res.ok) {
+      throw new Error(`Device polling failed (HTTP ${res.status})`);
+    }
+    return (await res.json()) as GitHubTokenResponse;
   }
   public static saveConfig(config: AiConfig): void {
     if (typeof window === 'undefined') return;

@@ -1187,5 +1187,85 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 			return
 		}
 	})
+
+	// 13. GET /api/ai/models (Auto-detect available models for a provider)
+	mux.HandleFunc("/api/ai/models", func(w http.ResponseWriter, r *http.Request) {
+		if !checkAuth(r, authToken) {
+			writeError(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+
+		provider := r.URL.Query().Get("provider")
+		apiKey := r.URL.Query().Get("api_key")
+		baseURL := r.URL.Query().Get("base_url")
+
+		if provider == "" {
+			provider = "gemini"
+		}
+
+		models, def, err := FetchProviderModels(r.Context(), provider, apiKey, baseURL)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{
+			"provider": provider,
+			"models":   models,
+			"default":  def,
+		})
+	})
+
+	// 14. POST /api/ai/oauth/device/start (Start GitHub Device Flow for Copilot/Codex)
+	mux.HandleFunc("/api/ai/oauth/device/start", func(w http.ResponseWriter, r *http.Request) {
+		if !checkAuth(r, authToken) {
+			writeError(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+
+		res, err := StartGitHubDeviceOAuth(r.Context())
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusOK, res)
+	})
+
+	// 15. POST /api/ai/oauth/device/poll (Poll GitHub Device Flow for token exchange)
+	mux.HandleFunc("/api/ai/oauth/device/poll", func(w http.ResponseWriter, r *http.Request) {
+		if !checkAuth(r, authToken) {
+			writeError(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+
+		var req struct {
+			DeviceCode string `json:"device_code"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.DeviceCode == "" {
+			writeError(w, http.StatusBadRequest, "device_code is required")
+			return
+		}
+
+		res, err := PollGitHubDeviceOAuth(r.Context(), req.DeviceCode)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusOK, res)
+	})
 }
 

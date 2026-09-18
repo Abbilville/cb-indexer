@@ -25,6 +25,27 @@ export interface CredentialsResponse {
   detected: DetectedCredential[];
 }
 
+export interface ModelsResponse {
+  provider: string;
+  models: string[];
+  default: string;
+}
+
+export interface GitHubDeviceStartResponse {
+  device_code: string;
+  user_code: string;
+  verification_uri: string;
+  expires_in: number;
+  interval: number;
+}
+
+export interface GitHubTokenResponse {
+  access_token?: string;
+  token_type?: string;
+  scope?: string;
+  error?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
