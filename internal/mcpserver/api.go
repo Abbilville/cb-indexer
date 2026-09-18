@@ -825,6 +825,104 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 		writeJSON(w, http.StatusOK, payload)
 	})
 
+	// 12. GET /api/ai/credentials (Detect active AI harness / environment credentials)
+	mux.HandleFunc("/api/ai/credentials", func(w http.ResponseWriter, r *http.Request) {
+		if !checkAuth(r, authToken) {
+			writeError(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+
+		var detected []map[string]any
+		home, _ := os.UserHomeDir()
+
+		// 1. Google Gemini
+		if os.Getenv("GEMINI_API_KEY") != "" || os.Getenv("GOOGLE_API_KEY") != "" {
+			detected = append(detected, map[string]any{
+				"provider":  "gemini",
+				"name":      "Google Gemini",
+				"source":    "System Environment",
+				"available": true,
+				"detail":    "Active GEMINI_API_KEY / GOOGLE_API_KEY detected in environment",
+			})
+		} else if _, err := os.Stat(filepath.Join(home, ".config", "gcloud", "application_default_credentials.json")); err == nil {
+			detected = append(detected, map[string]any{
+				"provider":  "gemini",
+				"name":      "Google Gemini",
+				"source":    "Google Cloud ADC / gcloud auth",
+				"available": true,
+				"detail":    "Google Cloud Application Default Credentials detected",
+			})
+		}
+
+		// 2. Anthropic Claude
+		if os.Getenv("ANTHROPIC_API_KEY") != "" || os.Getenv("CLAUDE_API_KEY") != "" {
+			detected = append(detected, map[string]any{
+				"provider":  "claude",
+				"name":      "Anthropic Claude",
+				"source":    "System Environment",
+				"available": true,
+				"detail":    "Active ANTHROPIC_API_KEY detected in environment",
+			})
+		} else if stat, err := os.Stat(filepath.Join(home, ".claude.json")); err == nil && !stat.IsDir() {
+			detected = append(detected, map[string]any{
+				"provider":  "claude",
+				"name":      "Anthropic Claude",
+				"source":    "Claude Code CLI Session (~/.claude.json)",
+				"available": true,
+				"detail":    "Claude Code subscription / CLI session detected",
+			})
+		}
+
+		// 3. OpenAI / Codex / Copilot
+		if os.Getenv("OPENAI_API_KEY") != "" {
+			detected = append(detected, map[string]any{
+				"provider":  "openai",
+				"name":      "OpenAI / Codex",
+				"source":    "System Environment",
+				"available": true,
+				"detail":    "Active OPENAI_API_KEY detected in environment",
+			})
+		} else if stat, err := os.Stat(filepath.Join(home, ".config", "github-copilot")); err == nil && stat.IsDir() {
+			detected = append(detected, map[string]any{
+				"provider":  "openai",
+				"name":      "OpenAI / Copilot",
+				"source":    "GitHub Copilot CLI Session",
+				"available": true,
+				"detail":    "GitHub Copilot authentication detected",
+			})
+		}
+
+		// 4. DeepSeek / Custom
+		if os.Getenv("DEEPSEEK_API_KEY") != "" {
+			detected = append(detected, map[string]any{
+				"provider":  "custom",
+				"name":      "DeepSeek",
+				"source":    "System Environment",
+				"available": true,
+				"detail":    "Active DEEPSEEK_API_KEY detected in environment",
+			})
+		}
+
+		// 5. Ollama Local Host
+		ollamaHost := os.Getenv("OLLAMA_HOST")
+		if ollamaHost == "" {
+			ollamaHost = "http://localhost:11434"
+		}
+		detected = append(detected, map[string]any{
+			"provider":  "custom",
+			"name":      "Local Ollama (Oh My Pi / Offline)",
+			"source":    "Localhost:11434",
+			"available": true,
+			"detail":    "Local Ollama / OpenAI-compatible endpoint (" + ollamaHost + ")",
+		})
+
+		writeJSON(w, http.StatusOK, map[string]any{"detected": detected})
+	})
+
 	// 12. POST /api/ai/chat (Proxy for AI chat queries with graph context)
 	mux.HandleFunc("/api/ai/chat", func(w http.ResponseWriter, r *http.Request) {
 		if !checkAuth(r, authToken) {
@@ -838,7 +936,9 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 
 		var req struct {
 			Provider     string   `json:"provider"`
+			AuthMode     string   `json:"auth_mode"`
 			APIKey       string   `json:"api_key"`
+			SessionToken string   `json:"session_token"`
 			Model        string   `json:"model"`
 			BaseURL      string   `json:"base_url"`
 			SystemPrompt string   `json:"system_prompt"`
@@ -854,6 +954,34 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 			return
 		}
 
+		apiKey := strings.TrimSpace(req.APIKey)
+		sessionToken := strings.TrimSpace(req.SessionToken)
+
+		// Auto-detect from system environment if in harness mode or keys are empty
+		if apiKey == "" && sessionToken == "" {
+			switch req.Provider {
+			case "gemini":
+				apiKey = os.Getenv("GEMINI_API_KEY")
+				if apiKey == "" {
+					apiKey = os.Getenv("GOOGLE_API_KEY")
+				}
+			case "claude":
+				apiKey = os.Getenv("ANTHROPIC_API_KEY")
+				if apiKey == "" {
+					apiKey = os.Getenv("CLAUDE_API_KEY")
+				}
+			case "openai":
+				apiKey = os.Getenv("OPENAI_API_KEY")
+			case "custom":
+				apiKey = os.Getenv("DEEPSEEK_API_KEY")
+			}
+		}
+
+		effectiveToken := apiKey
+		if effectiveToken == "" {
+			effectiveToken = sessionToken
+		}
+
 		ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 		defer cancel()
 
@@ -861,8 +989,8 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 
 		switch req.Provider {
 		case "gemini":
-			if req.APIKey == "" {
-				writeError(w, http.StatusBadRequest, "API Key is required for Gemini")
+			if effectiveToken == "" {
+				writeError(w, http.StatusBadRequest, "No API Key, Google OAuth token, or GEMINI_API_KEY environment variable detected.")
 				return
 			}
 			model := req.Model
@@ -870,7 +998,7 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 				model = "gemini-2.5-flash"
 			}
 			url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s",
-				model, req.APIKey)
+				model, effectiveToken)
 
 			var contents []map[string]any
 			for _, m := range req.Messages {
@@ -928,8 +1056,8 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 			return
 
 		case "claude":
-			if req.APIKey == "" {
-				writeError(w, http.StatusBadRequest, "API Key is required for Claude")
+			if effectiveToken == "" {
+				writeError(w, http.StatusBadRequest, "No API Key, Claude Session token, or ANTHROPIC_API_KEY environment variable detected.")
 				return
 			}
 			model := req.Model
@@ -958,7 +1086,11 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 				return
 			}
 			httpReq.Header.Set("Content-Type", "application/json")
-			httpReq.Header.Set("x-api-key", req.APIKey)
+			if sessionToken != "" {
+				httpReq.Header.Set("Authorization", "Bearer "+sessionToken)
+			} else {
+				httpReq.Header.Set("x-api-key", effectiveToken)
+			}
 			httpReq.Header.Set("anthropic-version", "2023-06-01")
 
 			resp, err := client.Do(httpReq)
@@ -1023,8 +1155,8 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 				return
 			}
 			httpReq.Header.Set("Content-Type", "application/json")
-			if req.APIKey != "" {
-				httpReq.Header.Set("Authorization", "Bearer "+req.APIKey)
+			if effectiveToken != "" {
+				httpReq.Header.Set("Authorization", "Bearer "+effectiveToken)
 			}
 
 			resp, err := client.Do(httpReq)

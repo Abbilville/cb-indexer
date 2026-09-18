@@ -1,7 +1,14 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { AiConfig, ChatMessage, AiProvider, PROVIDER_PRESETS } from '../../types/ai';
+import {
+  AiConfig,
+  ChatMessage,
+  AiProvider,
+  AuthMethod,
+  PROVIDER_PRESETS,
+  DetectedCredential,
+} from '../../types/ai';
 import { GraphNode, GraphPayload } from '../../types/graph';
 import { AiService } from '../../services/ai';
 import { useToast } from '../ui/Toast';
@@ -17,9 +24,11 @@ import {
   EyeOff,
   Check,
   Copy,
-  ChevronDown,
   Layers,
-  ChevronUp,
+  Zap,
+  KeyRound,
+  ShieldCheck,
+  X,
 } from 'lucide-react';
 
 interface AstAskTabProps {
@@ -38,6 +47,9 @@ export function AstAskTab({
   const [config, setConfig] = useState<AiConfig>(AiService.loadConfig);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
+  const [showSessionToken, setShowSessionToken] = useState(false);
+  const [detectedCreds, setDetectedCreds] = useState<DetectedCredential[]>([]);
+  const [isLoadingCreds, setIsLoadingCreds] = useState(false);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
@@ -51,6 +63,26 @@ export function AstAskTab({
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
+
+  // Load detected credentials from backend environment & CLI tools
+  useEffect(() => {
+    let isMounted = true;
+    const fetchCreds = async () => {
+      setIsLoadingCreds(true);
+      try {
+        const creds = await AiService.fetchDetectedCredentials();
+        if (isMounted) {
+          setDetectedCreds(creds);
+        }
+      } finally {
+        if (isMounted) setIsLoadingCreds(false);
+      }
+    };
+    fetchCreds();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Persist config changes
   const updateConfig = (patch: Partial<AiConfig>) => {
@@ -70,14 +102,30 @@ export function AstAskTab({
     });
   };
 
+  const handleApplyDetected = (cred: DetectedCredential) => {
+    handleProviderChange(cred.provider);
+    updateConfig({
+      provider: cred.provider,
+      authMethod: 'harness',
+    });
+    showToast(`Connected to ${cred.name} (${cred.source})`, 'success');
+  };
+
   const handleSendMessage = async (customPrompt?: string) => {
     const textToSend = customPrompt || inputText.trim();
     if (!textToSend || isLoading) return;
 
-    // Validate API key if not a custom local endpoint
-    if (config.provider !== 'custom' && !config.apiKey.trim()) {
+    // In direct API key mode, ensure key is present
+    if (config.authMethod === 'api_key' && config.provider !== 'custom' && !config.apiKey.trim()) {
       setIsSettingsOpen(true);
       showToast(`Please enter your ${PROVIDER_PRESETS[config.provider].name} API Key`, 'warn');
+      return;
+    }
+
+    // In session mode, ensure token is present
+    if (config.authMethod === 'session' && !config.sessionToken?.trim()) {
+      setIsSettingsOpen(true);
+      showToast(`Please paste your Web Subscription Session Token`, 'warn');
       return;
     }
 
@@ -108,7 +156,7 @@ export function AstAskTab({
       const errorMessage: ChatMessage = {
         id: `err-${Date.now()}`,
         role: 'assistant',
-        content: `Error: ${errorMsg}\n\nCheck your API key, model name, or network settings in the settings panel above.`,
+        content: `Error: ${errorMsg}\n\nTip: You can switch between "Harness Auto-Detect", "Web Subscription", or "API Key" in the settings panel above.`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         isError: true,
       };
@@ -129,7 +177,7 @@ export function AstAskTab({
 
   return (
     <div className="flex flex-col h-full overflow-hidden text-xs bg-gray-950/60">
-      {/* 1. Header & Provider Bar */}
+      {/* 1. Header & Provider Status Bar */}
       <div className="p-3 border-b border-white/10 bg-black/30 shrink-0">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
@@ -137,10 +185,27 @@ export function AstAskTab({
               <Bot className="w-4 h-4" />
             </div>
             <div className="min-w-0">
-              <span className="font-bold text-gray-200 block truncate leading-tight">
-                {currentPreset.name}
-              </span>
-              <span className="text-[10px] text-gray-500 font-mono block truncate">
+              <div className="flex items-center gap-1.5">
+                <span className="font-bold text-gray-200 block truncate leading-tight">
+                  {currentPreset.name}
+                </span>
+                <span
+                  className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono font-semibold border ${
+                    config.authMethod === 'harness'
+                      ? 'bg-purple-500/15 border-purple-500/30 text-purple-300'
+                      : config.authMethod === 'session'
+                      ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                      : 'bg-blue-500/15 border-blue-500/30 text-blue-300'
+                  }`}
+                >
+                  {config.authMethod === 'harness'
+                    ? 'Harness'
+                    : config.authMethod === 'session'
+                    ? 'Subscription'
+                    : 'API Key'}
+                </span>
+              </div>
+              <span className="text-[10px] text-gray-500 font-mono block truncate mt-0.5">
                 {config.model}
               </span>
             </div>
@@ -163,7 +228,7 @@ export function AstAskTab({
                   ? 'bg-blue-600/20 border-blue-500/40 text-blue-300'
                   : 'bg-white/5 border-white/10 text-gray-400 hover:text-white'
               }`}
-              title="Configure AI Provider & API Key"
+              title="Configure AI Authentication & Provider"
             >
               <Settings className="w-3.5 h-3.5" />
             </button>
@@ -172,11 +237,155 @@ export function AstAskTab({
 
         {/* Expandable Settings Drawer */}
         {isSettingsOpen && (
-          <div className="mt-3 pt-3 border-t border-white/10 space-y-3 animate-in fade-in slide-in-from-top-2">
+          <div className="mt-3 pt-3 border-t border-white/10 space-y-3.5 animate-in fade-in slide-in-from-top-2">
+            {/* Authentication Mode Switcher */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] uppercase font-semibold text-gray-400 tracking-wider block">
+                Authentication & Subscription Mode
+              </label>
+              <div className="grid grid-cols-3 gap-1 bg-black/50 p-1 rounded-xl border border-white/10">
+                <button
+                  onClick={() => updateConfig({ authMethod: 'harness' })}
+                  className={`py-1.5 px-1 rounded-lg text-[10px] font-semibold flex flex-col items-center gap-1 transition-all ${
+                    config.authMethod === 'harness'
+                      ? 'bg-purple-600 text-white shadow-md'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                  title="Auto-detect from Oh My Pi, active CLI session, or environment"
+                >
+                  <Zap className="w-3 h-3" />
+                  <span>Harness CLI</span>
+                </button>
+                <button
+                  onClick={() => updateConfig({ authMethod: 'session' })}
+                  className={`py-1.5 px-1 rounded-lg text-[10px] font-semibold flex flex-col items-center gap-1 transition-all ${
+                    config.authMethod === 'session'
+                      ? 'bg-emerald-600 text-white shadow-md'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                  title="Web subscription login or session token"
+                >
+                  <ShieldCheck className="w-3 h-3" />
+                  <span>Subscription</span>
+                </button>
+                <button
+                  onClick={() => updateConfig({ authMethod: 'api_key' })}
+                  className={`py-1.5 px-1 rounded-lg text-[10px] font-semibold flex flex-col items-center gap-1 transition-all ${
+                    config.authMethod === 'api_key'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                  title="Direct developer console API key"
+                >
+                  <KeyRound className="w-3 h-3" />
+                  <span>API Key</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Mode 1: Harness / Auto-Detected Credentials */}
+            {config.authMethod === 'harness' && (
+              <div className="space-y-2 p-2.5 rounded-xl bg-purple-950/25 border border-purple-500/20">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-purple-300 uppercase tracking-wider flex items-center gap-1">
+                    <Zap className="w-3 h-3 text-purple-400" />
+                    Detected System Credentials
+                  </span>
+                  {isLoadingCreds && <Loader2 className="w-3 h-3 animate-spin text-purple-400" />}
+                </div>
+
+                <p className="text-[10px] text-gray-400 leading-relaxed">
+                  Uses active credentials from your local machine, Oh My Pi harness, or CLI sessions without developer API billing.
+                </p>
+
+                <div className="space-y-1 max-h-32 overflow-y-auto pr-0.5">
+                  {detectedCreds.length === 0 ? (
+                    <div className="py-2 text-center text-gray-500 text-[10px]">
+                      No active CLI sessions detected. You can also use Subscription or API Key mode.
+                    </div>
+                  ) : (
+                    detectedCreds.map((cred, idx) => (
+                      <div
+                        key={`${cred.provider}-${idx}`}
+                        onClick={() => handleApplyDetected(cred)}
+                        className={`p-1.5 rounded-lg border text-[10.5px] flex items-center justify-between gap-1.5 cursor-pointer transition-all ${
+                          config.provider === cred.provider
+                            ? 'bg-purple-600/20 border-purple-500/40 text-purple-200'
+                            : 'bg-black/30 border-white/5 text-gray-300 hover:bg-white/5'
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <span className="font-bold block truncate">{cred.name}</span>
+                          <span className="text-[9px] text-gray-400 font-mono block truncate">{cred.detail}</span>
+                        </div>
+                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-white/10 text-emerald-300 shrink-0">
+                          Connect
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Mode 2: Web Subscription Login / Session Token */}
+            {config.authMethod === 'session' && (
+              <div className="space-y-1.5 p-2.5 rounded-xl bg-emerald-950/25 border border-emerald-500/20">
+                <label className="text-[10px] uppercase font-semibold text-emerald-300 tracking-wider block">
+                  Web Subscription Session / Access Token
+                </label>
+                <div className="relative">
+                  <input
+                    type={showSessionToken ? 'text' : 'password'}
+                    value={config.sessionToken || ''}
+                    onChange={(e) => updateConfig({ sessionToken: e.target.value })}
+                    placeholder="Paste ChatGPT Plus / Claude Pro session or Bearer token..."
+                    className="w-full pl-2.5 pr-8 py-1.5 bg-black/60 border border-emerald-500/30 rounded-xl text-xs text-gray-200 font-mono focus:outline-none focus:border-emerald-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowSessionToken(!showSessionToken)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+                  >
+                    {showSessionToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+                <p className="text-[9.5px] text-gray-400 leading-relaxed">
+                  Allows using your personal web subscription (ChatGPT Plus / Claude Pro) directly. Token is kept private in browser localStorage.
+                </p>
+              </div>
+            )}
+
+            {/* Mode 3: Developer API Key */}
+            {config.authMethod === 'api_key' && (
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-semibold text-gray-400 tracking-wider flex items-center justify-between">
+                  <span>Developer API Key</span>
+                  <span className="text-[9px] text-gray-500">Stored in browser localStorage</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type={showApiKey ? 'text' : 'password'}
+                    value={config.apiKey}
+                    onChange={(e) => updateConfig({ apiKey: e.target.value })}
+                    placeholder={currentPreset.placeholderKey}
+                    className="w-full pl-2.5 pr-8 py-1.5 bg-black/60 border border-white/10 rounded-xl text-xs text-gray-200 font-mono focus:outline-none focus:border-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKey(!showApiKey)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+                  >
+                    {showApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Provider Selector */}
             <div className="space-y-1">
               <label className="text-[10px] uppercase font-semibold text-gray-400 tracking-wider">
-                AI Provider
+                Model Provider
               </label>
               <select
                 value={config.provider}
@@ -195,15 +404,13 @@ export function AstAskTab({
               <label className="text-[10px] uppercase font-semibold text-gray-400 tracking-wider">
                 Model Name
               </label>
-              <div className="flex gap-1.5">
-                <input
-                  type="text"
-                  value={config.model}
-                  onChange={(e) => updateConfig({ model: e.target.value })}
-                  placeholder={currentPreset.defaultModel}
-                  className="flex-1 px-2.5 py-1.5 bg-black/60 border border-white/10 rounded-xl text-xs text-gray-200 font-mono focus:outline-none focus:border-blue-500"
-                />
-              </div>
+              <input
+                type="text"
+                value={config.model}
+                onChange={(e) => updateConfig({ model: e.target.value })}
+                placeholder={currentPreset.defaultModel}
+                className="w-full px-2.5 py-1.5 bg-black/60 border border-white/10 rounded-xl text-xs text-gray-200 font-mono focus:outline-none focus:border-blue-500"
+              />
               <div className="flex flex-wrap gap-1 mt-1">
                 {currentPreset.models.map((m) => (
                   <button
@@ -218,30 +425,6 @@ export function AstAskTab({
                     {m}
                   </button>
                 ))}
-              </div>
-            </div>
-
-            {/* API Key Input */}
-            <div className="space-y-1">
-              <label className="text-[10px] uppercase font-semibold text-gray-400 tracking-wider flex items-center justify-between">
-                <span>Secret API Key</span>
-                <span className="text-[9px] text-gray-500">Stored in browser localStorage</span>
-              </label>
-              <div className="relative">
-                <input
-                  type={showApiKey ? 'text' : 'password'}
-                  value={config.apiKey}
-                  onChange={(e) => updateConfig({ apiKey: e.target.value })}
-                  placeholder={currentPreset.placeholderKey}
-                  className="w-full pl-2.5 pr-8 py-1.5 bg-black/60 border border-white/10 rounded-xl text-xs text-gray-200 font-mono focus:outline-none focus:border-blue-500"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowApiKey(!showApiKey)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
-                >
-                  {showApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                </button>
               </div>
             </div>
 
@@ -381,7 +564,6 @@ export function AstAskTab({
                       : 'bg-black/50 border border-white/10 text-gray-200 rounded-tl-none shadow-md'
                   }`}
                 >
-                  {/* Context chip on user message if present */}
                   {m.contextSummary && (
                     <span className="text-[9.5px] px-1.5 py-0.2 rounded bg-white/10 text-blue-300 block w-fit mb-1.5 font-mono">
                       {m.contextSummary}

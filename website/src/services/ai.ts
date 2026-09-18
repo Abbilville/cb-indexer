@@ -1,4 +1,4 @@
-import { AiConfig, ChatMessage, PROVIDER_PRESETS } from '../types/ai';
+import { AiConfig, ChatMessage, PROVIDER_PRESETS, DetectedCredential, CredentialsResponse } from '../types/ai';
 import { GraphNode, GraphPayload } from '../types/graph';
 
 const AI_CONFIG_KEY = 'cb_ai_config';
@@ -8,7 +8,9 @@ export class AiService {
     if (typeof window === 'undefined') {
       return {
         provider: 'gemini',
+        authMethod: 'harness',
         apiKey: '',
+        sessionToken: '',
         model: PROVIDER_PRESETS.gemini.defaultModel,
         temperature: 0.4,
         includeNodeContext: true,
@@ -27,7 +29,9 @@ export class AiService {
 
     return {
       provider: 'gemini',
+      authMethod: 'harness',
       apiKey: '',
+      sessionToken: '',
       model: PROVIDER_PRESETS.gemini.defaultModel,
       temperature: 0.4,
       includeNodeContext: true,
@@ -35,6 +39,17 @@ export class AiService {
     };
   }
 
+  public static async fetchDetectedCredentials(): Promise<DetectedCredential[]> {
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || '';
+      const res = await fetch(`${baseUrl}/api/ai/credentials`);
+      if (!res.ok) return [];
+      const data = (await res.json()) as CredentialsResponse;
+      return data.detected || [];
+    } catch {
+      return [];
+    }
+  }
   public static saveConfig(config: AiConfig): void {
     if (typeof window === 'undefined') return;
     try {
@@ -91,6 +106,11 @@ export class AiService {
     selectedNode: GraphNode | null
   ): Promise<string> {
     const systemPrompt = this.buildSystemPrompt(config, graphData, selectedNode);
+
+    // If in Harness auto-detect mode or Session token mode, route directly through Go backend proxy
+    if (config.authMethod === 'harness' || config.authMethod === 'session') {
+      return this.callProxy(config, messages, systemPrompt, new Error('Proxy mode'));
+    }
 
     switch (config.provider) {
       case 'gemini':
@@ -286,7 +306,9 @@ export class AiService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           provider: config.provider,
+          auth_mode: config.authMethod,
           api_key: config.apiKey,
+          session_token: config.sessionToken,
           model: config.model,
           base_url: config.baseUrl,
           temperature: config.temperature,

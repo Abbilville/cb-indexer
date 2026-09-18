@@ -1,13 +1,28 @@
 export type AiProvider = 'gemini' | 'claude' | 'openai' | 'custom';
+export type AuthMethod = 'harness' | 'session' | 'api_key';
 
 export interface AiConfig {
   provider: AiProvider;
+  authMethod: AuthMethod;
   apiKey: string;
+  sessionToken?: string;
   model: string;
   baseUrl?: string;
   temperature?: number;
   includeNodeContext?: boolean;
   includeGraphContext?: boolean;
+}
+
+export interface DetectedCredential {
+  provider: AiProvider;
+  name: string;
+  source: string;
+  available: boolean;
+  detail?: string;
+}
+
+export interface CredentialsResponse {
+  detected: DetectedCredential[];
 }
 
 export interface ChatMessage {
