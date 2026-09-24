@@ -16,6 +16,7 @@ import { useToast } from '../ui/Toast';
 import {
   X,
   FileCode,
+  Copy,
   ArrowUpRight,
   ArrowDownLeft,
   Loader2,
@@ -329,13 +330,25 @@ export function NodeInspector({
                 <FileCode className="w-3 h-3 text-blue-400" />
                 <span>Code Viewer (Click line to focus node)</span>
               </span>
-              <button
-                onClick={() => setSnippet(null)}
-                className="text-gray-400 hover:text-white"
-                title="Collapse Preview"
-              >
-                <X className="w-3 h-3" />
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(snippet);
+                    showToast('Code snippet copied to clipboard', 'success');
+                  }}
+                  className="text-gray-400 hover:text-cyan-300 p-0.5"
+                  title="Copy Code"
+                >
+                  <Copy className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={() => setSnippet(null)}
+                  className="text-gray-400 hover:text-white p-0.5"
+                  title="Collapse Preview"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
             </div>
             <div className="overflow-x-auto max-h-56 font-mono text-[11px] select-text">
               {snippet.split('\n').map((lineText, idx) => {

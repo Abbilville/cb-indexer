@@ -69,7 +69,6 @@ export function Graph3DView({
   selectedEdge,
   onSelectNode,
   onSelectEdge,
-  onHoverNode,
   filterLabels,
   filterEdgeTypes,
   searchFocusId,
@@ -93,8 +92,6 @@ export function Graph3DView({
   nodeSizeRef.current = nodeSize;
   nodeOpacityRef.current = nodeOpacity;
 
-  const onHoverNodeRef = useRef(onHoverNode);
-  onHoverNodeRef.current = onHoverNode;
   // Compute neighborhood / path for selection focus
   const { highlightNodes, highlightLinks } = useMemo(() => {
     const hNodes = new Set<string | number>();
@@ -342,10 +339,6 @@ export function Graph3DView({
         .onBackgroundClick(() => {
           onSelectNode(null);
           onSelectEdge(null);
-        })
-        .onNodeHover((node: unknown) => {
-          const n = node as GraphNode | null;
-          onHoverNodeRef.current?.(n ? n.id : null);
         });
 
       // Load initial graph data immediately upon initialization

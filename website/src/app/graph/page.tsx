@@ -9,7 +9,6 @@ import { FloatingControls, AstViewMode } from '../../components/ast/FloatingCont
 import { FloatingLegend } from '../../components/ast/FloatingLegend';
 import { NodeInspector } from '../../components/graph/NodeInspector';
 import { EdgeInspector } from '../../components/graph/EdgeInspector';
-import { CodeViewer } from '../../components/graph/CodeViewer';
 import { RepoDetail, ProjectCatalogItem } from '../../types/project';
 import { ApiService } from '../../services/api';
 import {
@@ -22,7 +21,7 @@ import {
   PathResult,
   FlowResult,
 } from '../../types/graph';
-import { ArrowLeft, RefreshCw, Loader2, Database, Network, GitBranch, FileCode } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Loader2, Database, Network, GitBranch } from 'lucide-react';
 
 const Graph2DView = dynamic(
   () => import('../../components/graph/Graph2DView').then((mod) => mod.Graph2DView),
@@ -95,20 +94,12 @@ function AstExplorerContent() {
   const [pathFrom, setPathFrom] = useState('');
   const [pathTo, setPathTo] = useState('');
   const [pathRel, setPathRel] = useState('CALL');
-  // Code Viewer state
-  const [isCodeViewerOpen, setIsCodeViewerOpen] = useState(false);
-  const [hoveredNodeId, setHoveredNodeId] = useState<string | number | null>(null);
+
 
   // Compute active analysis path highlight sets
   const { highlightedNodeIds, highlightedEdgeIds } = useMemo(() => {
     const nodeIds = new Set<string | number>();
     const edgeIds = new Set<string | number>();
-
-    // Add hovered node from Code Viewer or Graph for instant bidirectional focus
-    if (hoveredNodeId !== null && hoveredNodeId !== undefined) {
-      nodeIds.add(hoveredNodeId);
-    }
-
     if (callFlowResult) {
       (callFlowResult.nodes || []).forEach((n) => nodeIds.add(n.id));
       (callFlowResult.edges || []).forEach((e) => edgeIds.add(e.id));
@@ -127,15 +118,11 @@ function AstExplorerContent() {
     }
 
     return { highlightedNodeIds: nodeIds, highlightedEdgeIds: edgeIds };
-  }, [callFlowResult, flowResult, impactResult, pathResult, hoveredNodeId]);
+  }, [callFlowResult, flowResult, impactResult, pathResult]);
 
-  // Bidirectional node selection handler: focuses node and auto-opens Code Viewer
   const handleSelectNode = useCallback((node: GraphNode | null) => {
     setSelectedNode(node);
     setSelectedEdge(null);
-    if (node?.file_path) {
-      setIsCodeViewerOpen(true);
-    }
   }, []);
 
   const handleClearAnalysisPath = useCallback(() => {
@@ -552,19 +539,7 @@ function AstExplorerContent() {
             )}
           </div>
 
-          {/* Interactive Code Viewer Toggle Button */}
-          <button
-            onClick={() => setIsCodeViewerOpen((prev) => !prev)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-medium transition-all ${
-              isCodeViewerOpen
-                ? 'bg-blue-600/30 text-blue-200 border-blue-500/50 shadow-sm'
-                : 'bg-white/5 hover:bg-white/10 border-white/10 text-gray-300 hover:text-white'
-            }`}
-            title="Toggle Interactive Code Viewer"
-          >
-            <FileCode className="w-3.5 h-3.5 text-blue-400" />
-            <span className="hidden md:inline">Code Viewer</span>
-          </button>
+
 
           {/* Refresh Button */}
           <button
@@ -578,9 +553,8 @@ function AstExplorerContent() {
         </div>
       </header>
 
-      {/* Main Split Layout: Sidebar + Canvas + Code Viewer */}
-      <div className="flex-1 flex flex-col min-h-0 relative overflow-hidden">
-        <div className="flex-1 flex min-h-0 relative overflow-hidden">
+      {/* Main Split Layout: Sidebar + Canvas Area */}
+      <div className="flex-1 flex min-h-0 relative overflow-hidden">
         {/* Left Sidebar (Filters + Project Tree) */}
         <AstSidebar
           data={graphData}
@@ -665,7 +639,6 @@ function AstExplorerContent() {
                   selectedNode={selectedNode}
                   selectedEdge={selectedEdge}
                   onSelectNode={handleSelectNode}
-                  onHoverNode={setHoveredNodeId}
                   onSelectEdge={(edge) => {
                     setSelectedEdge(edge);
                     setSelectedNode(null);
@@ -690,7 +663,6 @@ function AstExplorerContent() {
                   selectedNode={selectedNode}
                   selectedEdge={selectedEdge}
                   onSelectNode={handleSelectNode}
-                  onHoverNode={setHoveredNodeId}
                   onSelectEdge={(edge) => {
                     setSelectedEdge(edge);
                     setSelectedNode(null);
@@ -775,24 +747,6 @@ function AstExplorerContent() {
             </>
           )}
         </main>
-        </div>
-
-        {/* Bottom Interactive Code Viewer Panel */}
-        <CodeViewer
-          isOpen={isCodeViewerOpen}
-          onToggle={() => setIsCodeViewerOpen(!isCodeViewerOpen)}
-          selectedNode={selectedNode}
-          hoveredNodeId={hoveredNodeId}
-          graphNodes={graphData?.nodes || []}
-          graphEdges={graphData?.links || []}
-          projectId={currentProjectId}
-          selectedRepo={selectedRepo}
-          graphScope={graphScope}
-          analysisMode={analysisMode}
-          highlightedNodeIds={highlightedNodeIds}
-          onSelectNode={handleSelectNode}
-          onHoverNode={setHoveredNodeId}
-        />
       </div>
     </div>
   );
