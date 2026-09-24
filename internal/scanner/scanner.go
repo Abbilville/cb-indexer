@@ -460,10 +460,15 @@ func isMonorepoWorkspace(dir string) bool {
 
 // ScanWorkspace inspects targetDir recursively for repositories, frameworks, ports, and inter-service relationships.
 func ScanWorkspace(targetDir string, projectID string) (*registry.ProjectRegistry, error) {
-	absDir, err := filepath.Abs(targetDir)
-	if err != nil {
-		absDir = targetDir
+	cleanTarget := strings.Trim(strings.TrimSpace(targetDir), "\"'")
+	if cleanTarget == "" {
+		cleanTarget = "."
 	}
+	absDir, err := filepath.Abs(cleanTarget)
+	if err != nil {
+		absDir = cleanTarget
+	}
+	absDir = filepath.Clean(absDir)
 
 	stat, err := os.Stat(absDir)
 	if err != nil || !stat.IsDir() {
@@ -567,11 +572,20 @@ func ScanWorkspace(targetDir string, projectID string) (*registry.ProjectRegistr
 
 	relationships := InferRelationships(repos, absDir)
 
-	pID := projectID
-	if pID == "" {
+	pID := strings.Trim(strings.TrimSpace(projectID), "\"'")
+	if pID == "" || pID == "." || pID == "/" || pID == "\\" {
 		pID = filepath.Base(absDir)
+		if pID == "." || pID == "/" || pID == "\\" || pID == "" {
+			pID = "workspace"
+		}
 	}
-
+	pID = strings.ReplaceAll(pID, ":", "")
+	pID = strings.ReplaceAll(pID, "/", "-")
+	pID = strings.ReplaceAll(pID, "\\", "-")
+	pID = strings.Trim(pID, "-. ")
+	if pID == "" {
+		pID = "workspace"
+	}
 	return &registry.ProjectRegistry{
 		ProjectID:     pID,
 		Name:          fmt.Sprintf("%s Ecosystem", pID),

@@ -223,6 +223,24 @@ export function TreeFlowchartView({
     }
   };
 
+  // Auto-pan and center when selectedNode changes
+  useEffect(() => {
+    if (!selectedNode) return;
+    for (const col of visibleColumns) {
+      for (const item of col) {
+        if (item.node.astNode && String(item.node.astNode.id) === String(selectedNode.id)) {
+          const containerWidth = containerRef.current?.clientWidth || 800;
+          const containerHeight = containerRef.current?.clientHeight || 600;
+          setPan({
+            x: containerWidth / 2 - (item.x + item.width / 2) * zoom,
+            y: containerHeight / 2 - (item.y + item.height / 2) * zoom,
+          });
+          return;
+        }
+      }
+    }
+  }, [selectedNode, visibleColumns, zoom]);
+
   // Pan interactions
   const handleMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).tagName === 'svg' || (e.target as HTMLElement).id === 'tree-bg') {

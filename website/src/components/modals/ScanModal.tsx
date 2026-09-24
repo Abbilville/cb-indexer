@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Search, FolderOpen, X, Loader2 } from 'lucide-react';
 import { ApiService } from '../../services/api';
 import { useToast } from '../ui/Toast';
+import { FolderExplorerModal } from './FolderExplorerModal';
 
 interface ScanModalProps {
   isOpen: boolean;
@@ -16,24 +17,16 @@ export function ScanModal({ isOpen, onClose, onScanComplete }: ScanModalProps) {
   const [path, setPath] = useState('.');
   const [projectId, setProjectId] = useState('');
   const [isScanning, setIsScanning] = useState(false);
-  const [isBrowsing, setIsBrowsing] = useState(false);
-
+  const [isExplorerOpen, setIsExplorerOpen] = useState(false);
   if (!isOpen) return null;
 
-  const handleBrowse = async () => {
-    try {
-      setIsBrowsing(true);
-      const res = await ApiService.browseFolder();
-      if (res.path) {
-        setPath(res.path);
-        showToast(`Selected directory: ${res.path}`, 'info');
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Folder picker failed';
-      showToast(msg, 'error');
-    } finally {
-      setIsBrowsing(false);
-    }
+  const handleOpenExplorer = () => {
+    setIsExplorerOpen(true);
+  };
+
+  const handleFolderSelected = (selectedPath: string) => {
+    setPath(selectedPath);
+    showToast(`Selected directory: ${selectedPath}`, 'info');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -50,7 +43,8 @@ export function ScanModal({ isOpen, onClose, onScanComplete }: ScanModalProps) {
         projectId: projectId.trim() || undefined,
       });
 
-      showToast(`Scan complete: found ${res.total_repos} repositories`, 'success');
+      const count = res.total_repos ?? res.repos_count ?? 0;
+      showToast(res.message || `Scan complete: found ${count} repositories`, 'success');
       onScanComplete(res.project_id);
       onClose();
     } catch (err: unknown) {
@@ -90,12 +84,11 @@ export function ScanModal({ isOpen, onClose, onScanComplete }: ScanModalProps) {
               />
               <button
                 type="button"
-                onClick={handleBrowse}
-                disabled={isBrowsing}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium text-gray-200 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all whitespace-nowrap active:scale-95 disabled:opacity-50"
-                title="Browse folder via system dialog"
+                onClick={handleOpenExplorer}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium text-gray-200 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all whitespace-nowrap active:scale-95"
+                title="Browse folders via IDE Explorer"
               >
-                {isBrowsing ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderOpen className="w-4 h-4 text-blue-400" />}
+                <FolderOpen className="w-4 h-4 text-blue-400" />
                 <span>Browse...</span>
               </button>
             </div>
@@ -131,6 +124,13 @@ export function ScanModal({ isOpen, onClose, onScanComplete }: ScanModalProps) {
           </div>
         </form>
       </div>
+
+      <FolderExplorerModal
+        isOpen={isExplorerOpen}
+        initialPath={path}
+        onClose={() => setIsExplorerOpen(false)}
+        onSelect={handleFolderSelected}
+      />
     </div>
   );
 }

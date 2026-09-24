@@ -49,7 +49,8 @@ func ServeHTTP(ctx context.Context, s *mcp.Server, port int, authToken string) e
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		authRequired := authToken != ""
-		_, _ = w.Write([]byte(fmt.Sprintf(`{"status":"healthy","service":"cb-indexer","auth_required":%t}`, authRequired)))
+		authenticated := checkAuth(r, authToken)
+		_, _ = w.Write([]byte(fmt.Sprintf(`{"status":"healthy","service":"cb-indexer","auth_required":%t,"authenticated":%t}`, authRequired, authenticated)))
 	})
 
 	// 3. REST API Endpoints for Dashboard & Standalone Clients

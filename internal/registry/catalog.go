@@ -107,8 +107,25 @@ func UnregisterProjectFromCatalog(projectID string) bool {
 			var raw map[string]any
 			if err := yaml.Unmarshal(data, &raw); err == nil {
 				if projects, ok := raw["projects"].(map[string]any); ok {
-					if _, exists := projects[projectID]; exists {
-						delete(projects, projectID)
+					var toDelete []string
+					cleanID := filepath.Clean(projectID)
+					for k, v := range projects {
+						if strings.EqualFold(k, projectID) || strings.EqualFold(filepath.Clean(k), cleanID) {
+							toDelete = append(toDelete, k)
+							continue
+						}
+						if pMap, ok := v.(map[string]any); ok {
+							if rPath, ok := pMap["registry_path"].(string); ok {
+								if strings.EqualFold(rPath, projectID) || strings.EqualFold(filepath.Clean(rPath), cleanID) {
+									toDelete = append(toDelete, k)
+								}
+							}
+						}
+					}
+					if len(toDelete) > 0 {
+						for _, k := range toDelete {
+							delete(projects, k)
+						}
 						outData, err := yaml.Marshal(raw)
 						if err == nil {
 							_ = os.WriteFile(cPath, outData, 0644)

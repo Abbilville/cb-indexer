@@ -47,10 +47,16 @@ function DashboardContent() {
 
         if (list.length > 0) {
           const defaultId = list[0].project_id || list[0].registry_path || '';
-          const exists = preferredId && list.some((p) => (p.project_id || p.registry_path) === preferredId);
+          const matchedPreferred =
+            preferredId &&
+            list.find(
+              (p) =>
+                (p.project_id && p.project_id.toLowerCase() === preferredId.toLowerCase()) ||
+                (p.registry_path && p.registry_path.toLowerCase() === preferredId.toLowerCase())
+            );
           const nextId =
-            exists && preferredId
-              ? preferredId
+            matchedPreferred
+              ? matchedPreferred.project_id || matchedPreferred.registry_path || preferredId
               : currentProjectId && list.some((p) => (p.project_id || p.registry_path) === currentProjectId)
               ? currentProjectId
               : defaultId;
@@ -191,7 +197,10 @@ function DashboardContent() {
         projectId={currentProjectId}
         projectName={overview?.project_name || activeProjectItem?.name}
         onClose={() => setIsDeleteOpen(false)}
-        onDeleted={() => loadProjects()}
+        onDeleted={() => {
+          setCurrentProjectId('');
+          loadProjects();
+        }}
       />
 
       <ServiceDetailModal

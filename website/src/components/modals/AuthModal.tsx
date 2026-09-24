@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { KeyRound, X } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { KeyRound, X, CheckCircle2, AlertTriangle, Eye, EyeOff, ShieldCheck, ShieldAlert, Loader2 } from 'lucide-react';
 import { ApiService } from '../../services/api';
 import { useToast } from '../ui/Toast';
 
@@ -14,16 +14,59 @@ interface AuthModalProps {
 export function AuthModal({ isOpen, onClose, onAuthChange }: AuthModalProps) {
   const { showToast } = useToast();
   const [tokenInput, setTokenInput] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [serverAuthInfo, setServerAuthInfo] = useState<{
+    authRequired: boolean;
+    authenticated: boolean;
+    message: string;
+  } | null>(null);
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    if (isOpen) {
+      const current = ApiService.getAuthToken();
+      setTokenInput(current);
+      setIsVerifying(true);
+      ApiService.verifyAuth(current)
+        .then((res) => {
+          setServerAuthInfo({
+            authRequired: res.auth_required,
+            authenticated: res.authenticated,
+            message: res.message,
+          });
+        })
+        .finally(() => {
+          setIsVerifying(false);
+        });
+    }
+  }, [isOpen]);
 
-  const handleSave = () => {
-    ApiService.setAuthToken(tokenInput);
-    showToast(tokenInput.trim() ? 'API Auth Token saved' : 'Auth Token cleared', 'success');
-    onAuthChange();
-    onClose();
+  const handleSave = async () => {
+    try {
+      setIsVerifying(true);
+      const verification = await ApiService.verifyAuth(tokenInput);
+      ApiService.setAuthToken(tokenInput);
+
+      if (verification.auth_required && !verification.authenticated) {
+        showToast('Warning: Token was rejected by the server (Invalid token)', 'error');
+      } else if (verification.auth_required && verification.authenticated) {
+        showToast('API Auth Token verified and saved', 'success');
+      } else {
+        showToast(tokenInput.trim() ? 'Token saved (Server does not require auth)' : 'Token cleared', 'info');
+      }
+      onAuthChange();
+      onClose();
+    } catch {
+      ApiService.setAuthToken(tokenInput);
+      showToast('Token saved', 'info');
+      onAuthChange();
+      onClose();
+    } finally {
+      setIsVerifying(false);
+    }
   };
 
+  if (!isOpen) return null;
   const handleClear = () => {
     ApiService.setAuthToken('');
     setTokenInput('');
@@ -47,20 +90,68 @@ export function AuthModal({ isOpen, onClose, onAuthChange }: AuthModalProps) {
             <X className="w-5 h-5" />
           </button>
         </div>
-
-        <p className="text-xs text-gray-400 mb-4 leading-relaxed">
-          If <code className="text-blue-300 bg-black/40 px-1.5 py-0.5 rounded font-mono">OSS_INDEXER_AUTH_TOKEN</code> is enabled on the server, enter the secret token below to authenticate dashboard requests.
-        </p>
+        <div className="mb-4">
+          {serverAuthInfo ? (
+            serverAuthInfo.authRequired ? (
+              serverAuthInfo.authenticated ? (
+                <div className="flex items-start gap-2.5 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300">
+                  <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-400 mt-0.5" />
+                  <div>
+                    <div className="font-semibold text-emerald-200">Server Auth: Required & Verified</div>
+                    <div className="text-emerald-300/80 text-[11px] mt-0.5">
+                      Server has authentication enabled (<code className="font-mono">OSS_INDEXER_AUTH_TOKEN</code>) and your current token is valid.
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start gap-2.5 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-300">
+                  <ShieldAlert className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
+                  <div>
+                    <div className="font-semibold text-rose-200">Server Auth: Required (Not Authenticated)</div>
+                    <div className="text-rose-300/80 text-[11px] mt-0.5">
+                      Server has authentication enabled. Please enter the matching secret token from your server&apos;s <code className="font-mono text-rose-200">.env</code> file.
+                    </div>
+                  </div>
+                </div>
+              )
+            ) : (
+              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300">
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-blue-400 mt-0.5" />
+                <div>
+                  <div className="font-semibold text-blue-200">Server Auth: Disabled (Open Mode)</div>
+                  <div className="text-blue-300/80 text-[11px] mt-0.5">
+                    The backend server does not require an auth token for local development requests.
+                  </div>
+                </div>
+              </div>
+            )
+          ) : (
+            <div className="p-3 rounded-xl bg-white/5 border border-white/10 text-xs text-gray-400 flex items-center gap-2">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-400" />
+              <span>Checking server auth status...</span>
+            </div>
+          )}
+        </div>
 
         <div className="space-y-2 mb-6">
           <label className="text-xs font-medium text-gray-300">Secret Auth Token</label>
-          <input
-            type="password"
-            value={tokenInput}
-            onChange={(e) => setTokenInput(e.target.value)}
-            placeholder="Enter Bearer token..."
-            className="w-full px-3.5 py-2.5 bg-black/50 border border-white/10 rounded-xl text-sm text-gray-100 placeholder:text-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50"
-          />
+          <div className="relative">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={tokenInput}
+              onChange={(e) => setTokenInput(e.target.value)}
+              placeholder="Enter server auth token..."
+              className="w-full pl-3.5 pr-10 py-2.5 bg-black/50 border border-white/10 rounded-xl text-sm text-gray-100 placeholder:text-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 font-mono"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white p-1"
+              title={showPassword ? 'Hide token' : 'Show token'}
+            >
+              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center justify-between gap-3 pt-2">

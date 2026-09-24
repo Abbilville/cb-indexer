@@ -15,7 +15,7 @@ export function Graph2DView({
   filterLabels,
   filterEdgeTypes,
   searchFocusId,
-  edgeThickness = 2.5,
+  edgeThickness = 1,
   edgeOpacity = 0.75,
   nodeSize = 1.0,
   nodeOpacity = 1.0,
@@ -115,36 +115,38 @@ export function Graph2DView({
             const baseColor = getNodeColor(n.label);
             const currentOpacity = nodeOpacityRef.current ?? 1.0;
 
-            // 1. Natural, subtle selection ring
+            // 1. Natural selection and connection rings
             if (isSelected) {
               ctx.beginPath();
-              ctx.arc(n.x, n.y, r + 3, 0, 2 * Math.PI, false);
+              ctx.arc(n.x, n.y, r + 4, 0, 2 * Math.PI, false);
               ctx.strokeStyle = '#60a5fa';
-              ctx.lineWidth = 2.2 / safeScale;
+              ctx.lineWidth = 2.5 / safeScale;
               ctx.stroke();
             } else if (isConnected && hasSelection) {
               ctx.beginPath();
-              ctx.arc(n.x, n.y, r + 2, 0, 2 * Math.PI, false);
-              ctx.strokeStyle = '#22d3ee';
-              ctx.lineWidth = 1.4 / safeScale;
+              ctx.arc(n.x, n.y, r + 2.5, 0, 2 * Math.PI, false);
+              ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+              ctx.lineWidth = 1.6 / safeScale;
               ctx.stroke();
             }
 
-            // 2. Node Circle with Subtle Balanced Dimming & Custom Opacity
+            // 2. Node Circle with custom opacity & high contrast dimming for outside nodes
             ctx.beginPath();
             ctx.arc(n.x, n.y, r, 0, 2 * Math.PI, false);
 
-            const fillAlpha = isDimmed ? currentOpacity * 0.35 : currentOpacity;
+            const fillAlpha = isDimmed ? currentOpacity * 0.15 : currentOpacity;
             ctx.fillStyle = hexToRgba(baseColor, fillAlpha);
             ctx.fill();
-            ctx.strokeStyle = isConnected
-              ? `rgba(255, 255, 255, ${fillAlpha})`
-              : `rgba(255, 255, 255, ${fillAlpha * 0.7})`;
-            ctx.lineWidth = (isConnected ? 1.4 : 0.8) / safeScale;
+            ctx.strokeStyle = isSelected
+              ? '#ffffff'
+              : isConnected
+                ? `rgba(255, 255, 255, ${Math.min(fillAlpha * 1.2, 1)})`
+                : `rgba(255, 255, 255, ${fillAlpha * 0.4})`;
+            ctx.lineWidth = (isSelected ? 2.0 : isConnected ? 1.5 : 0.6) / safeScale;
             ctx.stroke();
 
-            // 3. Node Text Label
-            const shouldShowLabel = isSelected || isConnected || safeScale >= 0.85;
+            // 3. Node Text Label: only show focused neighborhood if selection active, otherwise standard zoom threshold
+            const shouldShowLabel = hasSelection ? (isSelected || isConnected) : safeScale >= 0.85;
             if (shouldShowLabel) {
               const fontSize = Math.max(10 / safeScale, 3);
               ctx.font = `600 ${fontSize}px -apple-system, sans-serif`;
@@ -152,14 +154,14 @@ export function Graph2DView({
               ctx.textBaseline = 'top';
 
               const textWidth = ctx.measureText(label).width;
-              ctx.fillStyle = isDimmed ? 'rgba(9, 13, 22, 0.6)' : 'rgba(9, 13, 22, 0.88)';
+              ctx.fillStyle = isDimmed ? 'rgba(9, 13, 22, 0.6)' : 'rgba(9, 13, 22, 0.9)';
               ctx.fillRect(
                 n.x - textWidth / 2 - 3,
                 n.y + r + 2,
                 textWidth + 6,
                 fontSize + 3
               );
-              ctx.strokeStyle = isSelected ? '#60a5fa' : isConnected ? '#22d3ee' : 'rgba(255,255,255,0.15)';
+              ctx.strokeStyle = isSelected ? '#60a5fa' : isConnected ? 'rgba(255, 255, 255, 0.4)' : 'rgba(255, 255, 255, 0.15)';
               ctx.lineWidth = 0.5 / safeScale;
               ctx.strokeRect(
                 n.x - textWidth / 2 - 3,
@@ -171,10 +173,10 @@ export function Graph2DView({
               ctx.fillStyle = isSelected
                 ? '#93c5fd'
                 : isConnected
-                ? '#a5f3fc'
-                : isDimmed
-                ? 'rgba(226, 232, 240, 0.45)'
-                : '#f1f5f9';
+                  ? '#ffffff'
+                  : isDimmed
+                    ? 'rgba(226, 232, 240, 0.45)'
+                    : '#f1f5f9';
               ctx.fillText(label, n.x, n.y + r + 3);
             }
           } catch {
@@ -190,7 +192,7 @@ export function Graph2DView({
           ctx.arc(n.x, n.y, r, 0, 2 * Math.PI, false);
           ctx.fill();
         })
-        // Link Colors: Custom Edge Opacity & Balanced Dimming
+        // Link Colors: Keep original edge color when focused, dim outside edges heavily
         .linkColor((link: unknown) => {
           const l = link as GraphEdge;
           const hasSelection = !!selectedNodeRef.current;
@@ -201,89 +203,41 @@ export function Graph2DView({
           if (isSelectedEdge) return '#f59e0b';
           if (hasSelection) {
             return isHighlighted
-              ? hexToRgba('#38bdf8', Math.min(currentEdgeOpacity * 1.3, 1))
-              : hexToRgba(getEdgeColor(l.type), currentEdgeOpacity * 0.25);
+              ? hexToRgba(getEdgeColor(l.type), 1.0)
+              : hexToRgba(getEdgeColor(l.type), currentEdgeOpacity * 0.12);
           }
           return hexToRgba(getEdgeColor(l.type), currentEdgeOpacity);
         })
-        // Edge Thickness: adjustable base thickness
+        // Edge Thickness: focused edges are bold, outside edges are thinner
         .linkWidth((link: unknown) => {
           const l = link as GraphEdge;
-          const currentBase = edgeThicknessRef.current || 2.5;
-          const isHighlighted = highlightLinksRef.current.has(l.id);
-          const isSelectedEdge = selectedEdgeRef.current && String(selectedEdgeRef.current.id) === String(l.id);
-          if (isSelectedEdge) return currentBase * 1.8;
-          if (isHighlighted) return currentBase * 1.4;
-          return currentBase;
-        })
-        // Proportional directional arrows centered on links
-        .linkDirectionalArrowLength((link: unknown) => {
-          const l = link as GraphEdge;
-          const currentBase = edgeThicknessRef.current || 2.5;
+          const currentBase = edgeThicknessRef.current || 1;
           const hasSelection = !!selectedNodeRef.current;
           const isHighlighted = highlightLinksRef.current.has(l.id);
-          if (hasSelection && !isHighlighted) return currentBase * 1.5;
+          const isSelectedEdge = selectedEdgeRef.current && String(selectedEdgeRef.current.id) === String(l.id);
+          if (isSelectedEdge) return currentBase * 2.2;
+          if (hasSelection) {
+            return isHighlighted ? currentBase * 2.2 : Math.max(currentBase * 0.35, 0.4);
+          }
+          return currentBase;
+        })
+        // Proportional directional arrows: prominent on focus edges, hidden on outside edges
+        .linkDirectionalArrowLength((link: unknown) => {
+          const l = link as GraphEdge;
+          const currentBase = edgeThicknessRef.current || 1;
+          const hasSelection = !!selectedNodeRef.current;
+          const isHighlighted = highlightLinksRef.current.has(l.id);
+          if (hasSelection) {
+            return isHighlighted ? Math.max(currentBase * 2.6, 6) : 0;
+          }
           return Math.max(currentBase * 2.2, 5.5);
         })
         .linkDirectionalArrowRelPos(0.6)
         .linkDirectionalArrowColor((link: unknown) => {
           const l = link as GraphEdge;
-          const isHighlighted = highlightLinksRef.current.has(l.id);
           const isSelectedEdge = selectedEdgeRef.current && String(selectedEdgeRef.current.id) === String(l.id);
           if (isSelectedEdge) return '#f59e0b';
-          return isHighlighted ? '#38bdf8' : getEdgeColor(l.type);
-        })
-        // Edge Label at link midpoint with distance-based visibility
-        .linkCanvasObjectMode(() => 'after')
-        .linkCanvasObject((link: unknown, ctx: CanvasRenderingContext2D, globalScale: number) => {
-          try {
-            if (!Number.isFinite(globalScale) || globalScale < 1.1) return;
-            const l = link as GraphEdge & {
-              source?: { x?: number; y?: number };
-              target?: { x?: number; y?: number };
-            };
-            if (
-              !l.source ||
-              !l.target ||
-              typeof l.source.x !== 'number' ||
-              typeof l.source.y !== 'number' ||
-              typeof l.target.x !== 'number' ||
-              typeof l.target.y !== 'number' ||
-              !Number.isFinite(l.source.x) ||
-              !Number.isFinite(l.source.y) ||
-              !Number.isFinite(l.target.x) ||
-              !Number.isFinite(l.target.y)
-            ) {
-              return;
-            }
-
-            const hasSelection = !!selectedNodeRef.current;
-            const isHighlighted = highlightLinksRef.current.has(l.id);
-
-            // Hide edge labels when zoomed out too far, unless highlighted
-            if (hasSelection && !isHighlighted && globalScale < 1.4) return;
-
-            const label = l.type;
-            if (!label) return;
-
-            const safeScale = Math.max(0.2, Math.min(globalScale, 6));
-            const midX = (l.source.x + l.target.x) / 2;
-            const midY = (l.source.y + l.target.y) / 2;
-            const fontSize = Math.max(8.5 / safeScale, 2.5);
-
-            ctx.font = `600 ${fontSize}px monospace`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-
-            const textWidth = ctx.measureText(label).width;
-            ctx.fillStyle = 'rgba(9, 13, 22, 0.88)';
-            ctx.fillRect(midX - textWidth / 2 - 2, midY - fontSize / 2 - 1, textWidth + 4, fontSize + 2);
-
-            ctx.fillStyle = isHighlighted ? '#38bdf8' : getEdgeColor(l.type);
-            ctx.fillText(label, midX, midY);
-          } catch {
-            // Guard against canvas exceptions on rapid zoom
-          }
+          return getEdgeColor(l.type);
         })
         // Click handlers
         .onNodeClick((node: unknown) => {
@@ -369,6 +323,26 @@ export function Graph2DView({
       onSelectNode(matched);
     }
   }, [searchFocusId, data.nodes, onSelectNode]);
+
+  // 5. Center & zoom camera to selectedNode (from Project Tree or sidebar)
+  useEffect(() => {
+    if (!selectedNode || !graphRef.current) return;
+    const currentData = graphRef.current.graphData();
+    if (!currentData || !currentData.nodes) return;
+    const target = currentData.nodes.find(
+      (n) => n.id !== undefined && String(n.id) === String(selectedNode.id)
+    );
+    if (
+      target &&
+      typeof target.x === 'number' &&
+      typeof target.y === 'number' &&
+      Number.isFinite(target.x) &&
+      Number.isFinite(target.y)
+    ) {
+      graphRef.current.centerAt(target.x, target.y, 800);
+      graphRef.current.zoom(2.2, 800);
+    }
+  }, [selectedNode]);
 
   return (
     <div className="relative w-full h-full min-h-[500px] overflow-hidden rounded-2xl bg-black/40 border border-white/5">

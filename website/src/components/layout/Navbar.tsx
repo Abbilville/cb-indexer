@@ -1,8 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Layers, RefreshCw, KeyRound, ExternalLink, Code2 } from 'lucide-react';
+import { Layers, RefreshCw, KeyRound, CheckCircle2, AlertTriangle, ExternalLink, Code2 } from 'lucide-react';
 import { ApiService } from '../../services/api';
 
 interface NavbarProps {
@@ -22,8 +22,34 @@ export function Navbar({
   onRefresh,
   onOpenAuth,
 }: NavbarProps) {
-  const hasAuth = ApiService.hasAuthToken();
+  const [authStatus, setAuthStatus] = useState<{
+    loaded: boolean;
+    authRequired: boolean;
+    authenticated: boolean;
+    hasToken: boolean;
+  }>({
+    loaded: false,
+    authRequired: false,
+    authenticated: true,
+    hasToken: false,
+  });
 
+  useEffect(() => {
+    let mounted = true;
+    ApiService.verifyAuth().then((res) => {
+      if (mounted) {
+        setAuthStatus({
+          loaded: true,
+          authRequired: res.auth_required,
+          authenticated: res.authenticated,
+          hasToken: ApiService.hasAuthToken(),
+        });
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [isRefreshing]);
   return (
     <header className="sticky top-0 z-40 flex items-center justify-between px-4 sm:px-6 py-3 bg-gray-950/80 backdrop-blur-xl border-b border-white/10">
       {/* Brand & Project Info */}
@@ -91,14 +117,42 @@ export function Navbar({
         <button
           onClick={onOpenAuth}
           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all ${
-            hasAuth
-              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20'
-              : 'bg-white/5 border-white/10 text-gray-300 hover:bg-white/10'
+            !authStatus.loaded
+              ? 'bg-white/5 border-white/10 text-gray-400'
+              : authStatus.authRequired
+              ? authStatus.authenticated
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20'
+                : authStatus.hasToken
+                ? 'bg-rose-500/10 border-rose-500/30 text-rose-300 hover:bg-rose-500/20 shadow-sm shadow-rose-500/20'
+                : 'bg-amber-500/10 border-amber-500/30 text-amber-300 hover:bg-amber-500/20'
+              : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10'
           }`}
           title="Configure API Auth Token"
         >
-          <KeyRound className="w-3.5 h-3.5 text-blue-400" />
-          <span>{hasAuth ? 'Auth Active' : 'Auth'}</span>
+          {!authStatus.loaded ? (
+            <KeyRound className="w-3.5 h-3.5 text-gray-400" />
+          ) : authStatus.authRequired ? (
+            authStatus.authenticated ? (
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+            ) : authStatus.hasToken ? (
+              <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+            ) : (
+              <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+            )
+          ) : (
+            <KeyRound className="w-3.5 h-3.5 text-gray-400" />
+          )}
+          <span>
+            {!authStatus.loaded
+              ? 'Auth'
+              : authStatus.authRequired
+              ? authStatus.authenticated
+                ? 'Authenticated'
+                : authStatus.hasToken
+                ? 'Auth Invalid'
+                : 'Auth Required'
+              : 'Auth Disabled'}
+          </span>
         </button>
 
         {/* Refresh Button */}
