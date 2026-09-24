@@ -11,7 +11,16 @@ import { NodeInspector } from '../../components/graph/NodeInspector';
 import { EdgeInspector } from '../../components/graph/EdgeInspector';
 import { RepoDetail } from '../../types/project';
 import { ApiService } from '../../services/api';
-import { GraphPayload, GraphNode, GraphEdge } from '../../types/graph';
+import {
+  GraphPayload,
+  GraphNode,
+  GraphEdge,
+  AnalysisMode,
+  CallFlowResult,
+  ImpactResult,
+  PathResult,
+  FlowResult,
+} from '../../types/graph';
 import { ArrowLeft, RefreshCw, Loader2, Database, Network, GitBranch } from 'lucide-react';
 
 const Graph2DView = dynamic(
@@ -64,6 +73,188 @@ function AstExplorerContent() {
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<GraphEdge | null>(null);
 
+
+  // CPG Analysis & Neighborhood
+  const [analysisMode, setAnalysisMode] = useState<AnalysisMode>('explore');
+  const [neighborhoodDepth, setNeighborhoodDepth] = useState(1);
+  const [neighborhoodInbound, setNeighborhoodInbound] = useState(true);
+  const [neighborhoodOutbound, setNeighborhoodOutbound] = useState(true);
+
+  // Analysis Inputs & Results
+  const [callFlowDirection, setCallFlowDirection] = useState<'callers' | 'callees' | 'both'>('both');
+  const [callFlowDepth, setCallFlowDepth] = useState(3);
+  const [callFlowResult, setCallFlowResult] = useState<CallFlowResult | null>(null);
+  const [impactResult, setImpactResult] = useState<ImpactResult | null>(null);
+  const [flowResult, setFlowResult] = useState<FlowResult | null>(null);
+  const [pathResult, setPathResult] = useState<PathResult | null>(null);
+
+  const [taintSource, setTaintSource] = useState('');
+  const [taintSink, setTaintSink] = useState('');
+  const [pathFrom, setPathFrom] = useState('');
+  const [pathTo, setPathTo] = useState('');
+  const [pathRel, setPathRel] = useState('CALL');
+
+  // Compute active analysis path highlight sets
+  const { highlightedNodeIds, highlightedEdgeIds } = useMemo(() => {
+    const nodeIds = new Set<string | number>();
+    const edgeIds = new Set<string | number>();
+
+    if (callFlowResult) {
+      callFlowResult.nodes.forEach((n) => nodeIds.add(n.id));
+      callFlowResult.edges.forEach((e) => edgeIds.add(e.id));
+    } else if (flowResult) {
+      nodeIds.add(flowResult.source.id);
+      nodeIds.add(flowResult.sink.id);
+      flowResult.steps.forEach((s) => nodeIds.add(s.node.id));
+    } else if (impactResult) {
+      nodeIds.add(impactResult.target_node.id);
+      impactResult.direct_callers.forEach((n) => nodeIds.add(n.id));
+      impactResult.indirect_callers.forEach((n) => nodeIds.add(n.id));
+      impactResult.edges.forEach((e) => edgeIds.add(e.id));
+    } else if (pathResult && pathResult.found) {
+      pathResult.nodes.forEach((n) => nodeIds.add(n.id));
+      pathResult.edges.forEach((e) => edgeIds.add(e.id));
+    }
+
+    return { highlightedNodeIds: nodeIds, highlightedEdgeIds: edgeIds };
+  }, [callFlowResult, flowResult, impactResult, pathResult]);
+
+  const handleClearAnalysisPath = useCallback(() => {
+    setCallFlowResult(null);
+    setFlowResult(null);
+    setImpactResult(null);
+    setPathResult(null);
+    setAnalysisMode('explore');
+    showToast('Analysis path cleared', 'info');
+  }, [showToast]);
+
+  const handleScopeChange = useCallback((newScope: 'ast' | 'cpg') => {
+    setGraphScope(newScope);
+    setSelectedNode(null);
+    setSelectedEdge(null);
+    setSelectedLabels([]);
+    setCallFlowResult(null);
+    setFlowResult(null);
+    setImpactResult(null);
+    setPathResult(null);
+    setAnalysisMode('explore');
+    if (newScope === 'cpg') {
+      // Sensible defaults: exclude CFG and DATA_FLOW by default to avoid clutter
+      setSelectedEdgeTypes(['CALL', 'REF', 'TYPE', 'IMPORT', 'CONTAINS', 'AST']);
+    } else {
+      setSelectedEdgeTypes([]);
+    }
+  }, []);
+
+  const handleTriggerAction = useCallback(
+    async (
+      action: 'callers' | 'callees' | 'data_flow' | 'control_flow' | 'impact' | 'find_path',
+      targetNode: GraphNode
+    ) => {
+      const repoTarget = selectedRepo || targetNode.project || currentProjectId;
+      if (!repoTarget) return;
+
+      try {
+        if (action === 'callers' || action === 'callees') {
+          const dir = action === 'callers' ? 'callers' : 'callees';
+          setAnalysisMode('call_flow');
+          setCallFlowDirection(dir);
+          const res = await ApiService.getCallFlow({
+            repo: repoTarget,
+            symbol: targetNode.name,
+            direction: dir,
+            depth: callFlowDepth,
+          });
+          setCallFlowResult(res);
+          showToast(`Traced ${res.nodes.length} ${dir} for ${targetNode.name}`, 'info');
+        } else if (action === 'control_flow') {
+          setAnalysisMode('control_flow');
+          const res = await ApiService.queryCPG({
+            repo: repoTarget,
+            type: 'cfg',
+            symbol: targetNode.name,
+          });
+          const flow = res.flow as FlowResult | undefined;
+          if (flow) {
+            setFlowResult(flow);
+            showToast(`Traced CFG for ${targetNode.name} (${flow.steps.length} steps)`, 'info');
+          } else {
+            showToast('No CFG steps found for this node', 'warn');
+          }
+        } else if (action === 'data_flow') {
+          setAnalysisMode('data_flow');
+          setTaintSource(targetNode.name);
+          const res = await ApiService.queryCPG({
+            repo: repoTarget,
+            type: 'data_flow',
+            source: targetNode.name,
+          });
+          const flow = res.flow as FlowResult | undefined;
+          if (flow) {
+            setFlowResult(flow);
+            showToast(`Traced data flow from ${targetNode.name} (${flow.steps.length} steps)`, 'info');
+          } else {
+            showToast('No data flow outgoing from this node', 'warn');
+          }
+        } else if (action === 'impact') {
+          setAnalysisMode('impact');
+          const res = await ApiService.getImpactAnalysis({
+            repo: repoTarget,
+            symbol: targetNode.name,
+          });
+          setImpactResult(res);
+          showToast(`Impact analysis: ${res.direct_count + res.indirect_count} dependents found`, 'info');
+        } else if (action === 'find_path') {
+          setAnalysisMode('find_path');
+          setPathFrom(targetNode.name);
+          showToast(`Set '${targetNode.name}' as starting point for path search`, 'info');
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Action failed';
+        showToast(msg, 'error');
+      }
+    },
+    [selectedRepo, currentProjectId, callFlowDepth, showToast]
+  );
+
+  const handleTraceTaintFlow = useCallback(async () => {
+    const repoTarget = selectedRepo || currentProjectId;
+    if (!repoTarget || !taintSource.trim()) return;
+    try {
+      const res = await ApiService.getTaintFlow({
+        repo: repoTarget,
+        source: taintSource.trim(),
+        sink: taintSink.trim(),
+      });
+      setFlowResult(res);
+      showToast(`Taint path traced: ${res.steps.length} step(s)`, 'info');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to trace taint flow';
+      showToast(msg, 'error');
+    }
+  }, [selectedRepo, currentProjectId, taintSource, taintSink, showToast]);
+
+  const handleFindPath = useCallback(async () => {
+    const repoTarget = selectedRepo || currentProjectId;
+    if (!repoTarget || !pathFrom.trim() || !pathTo.trim()) return;
+    try {
+      const res = await ApiService.findPath({
+        repo: repoTarget,
+        from: pathFrom.trim(),
+        to: pathTo.trim(),
+        rel: pathRel,
+      });
+      setPathResult(res);
+      if (res.found) {
+        showToast(`Path found with ${res.nodes.length} nodes!`, 'success');
+      } else {
+        showToast('No connecting path found', 'warn');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Path search failed';
+      showToast(msg, 'error');
+    }
+  }, [selectedRepo, currentProjectId, pathFrom, pathTo, pathRel, showToast]);
   // Loading
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -205,15 +396,7 @@ function AstExplorerContent() {
         {/* Graph Type Switcher: AST vs CPG */}
         <div className="flex items-center p-0.5 rounded-xl bg-white/5 border border-white/10 text-xs font-mono">
           <button
-            onClick={() => {
-              if (graphScope !== 'ast') {
-                setGraphScope('ast');
-                setSelectedNode(null);
-                setSelectedEdge(null);
-                setSelectedLabels([]);
-                setSelectedEdgeTypes([]);
-              }
-            }}
+            onClick={() => handleScopeChange('ast')}
             className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-medium transition-all ${
               graphScope === 'ast'
                 ? 'bg-purple-600/30 text-purple-200 border border-purple-500/40 shadow-sm'
@@ -225,15 +408,7 @@ function AstExplorerContent() {
             <span>AST</span>
           </button>
           <button
-            onClick={() => {
-              if (graphScope !== 'cpg') {
-                setGraphScope('cpg');
-                setSelectedNode(null);
-                setSelectedEdge(null);
-                setSelectedLabels([]);
-                setSelectedEdgeTypes([]);
-              }
-            }}
+            onClick={() => handleScopeChange('cpg')}
             className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-medium transition-all ${
               graphScope === 'cpg'
                 ? 'bg-cyan-600/30 text-cyan-200 border border-cyan-500/40 shadow-sm'
@@ -306,6 +481,34 @@ function AstExplorerContent() {
           onChangeNodeSize={setNodeSize}
           nodeOpacity={nodeOpacity}
           onChangeNodeOpacity={setNodeOpacity}
+          graphScope={graphScope}
+          onChangeGraphScope={handleScopeChange}
+          analysisMode={analysisMode}
+          onChangeAnalysisMode={setAnalysisMode}
+          neighborhoodDepth={neighborhoodDepth}
+          onChangeNeighborhoodDepth={setNeighborhoodDepth}
+          neighborhoodInbound={neighborhoodInbound}
+          onChangeNeighborhoodInbound={setNeighborhoodInbound}
+          neighborhoodOutbound={neighborhoodOutbound}
+          onChangeNeighborhoodOutbound={setNeighborhoodOutbound}
+          callFlowDirection={callFlowDirection}
+          onChangeCallFlowDirection={setCallFlowDirection}
+          callFlowDepth={callFlowDepth}
+          onChangeCallFlowDepth={setCallFlowDepth}
+          taintSource={taintSource}
+          onChangeTaintSource={setTaintSource}
+          taintSink={taintSink}
+          onChangeTaintSink={setTaintSink}
+          onTraceTaintFlow={handleTraceTaintFlow}
+          pathFrom={pathFrom}
+          onChangePathFrom={setPathFrom}
+          pathTo={pathTo}
+          onChangePathTo={setPathTo}
+          pathRel={pathRel}
+          onChangePathRel={setPathRel}
+          onFindPath={handleFindPath}
+          hasActiveAnalysisPath={Boolean(callFlowResult || flowResult || impactResult || (pathResult && pathResult.found))}
+          onClearAnalysisPath={handleClearAnalysisPath}
         />
 
         {/* Center Canvas */}
@@ -349,6 +552,9 @@ function AstExplorerContent() {
                   edgeOpacity={edgeOpacity}
                   nodeSize={nodeSize}
                   nodeOpacity={nodeOpacity}
+                  highlightedNodeIds={highlightedNodeIds}
+                  highlightedEdgeIds={highlightedEdgeIds}
+                  neighborhoodDepth={neighborhoodDepth}
                 />
               )}
 
@@ -373,6 +579,9 @@ function AstExplorerContent() {
                   edgeOpacity={edgeOpacity}
                   nodeSize={nodeSize}
                   nodeOpacity={nodeOpacity}
+                  highlightedNodeIds={highlightedNodeIds}
+                  highlightedEdgeIds={highlightedEdgeIds}
+                  neighborhoodDepth={neighborhoodDepth}
                 />
               )}
 
@@ -426,6 +635,13 @@ function AstExplorerContent() {
                   projectId={currentProjectId}
                   onClose={() => setSelectedNode(null)}
                   onSelectNode={setSelectedNode}
+                  graphScope={graphScope}
+                  analysisMode={analysisMode}
+                  onTriggerAction={handleTriggerAction}
+                  callFlowResult={callFlowResult}
+                  impactResult={impactResult}
+                  flowResult={flowResult}
+                  pathResult={pathResult}
                 />
               )}
 

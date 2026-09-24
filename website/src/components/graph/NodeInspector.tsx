@@ -1,7 +1,15 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { GraphNode, GraphEdge } from '../../types/graph';
+import {
+  GraphNode,
+  GraphEdge,
+  AnalysisMode,
+  CallFlowResult,
+  ImpactResult,
+  PathResult,
+  FlowResult,
+} from '../../types/graph';
 import { getNodeColor, getEdgeColor } from './utils';
 import { ApiService } from '../../services/api';
 import { useToast } from '../ui/Toast';
@@ -12,6 +20,9 @@ import {
   ArrowDownLeft,
   Loader2,
   ChevronRight,
+  Compass,
+  Route,
+  ShieldAlert,
 } from 'lucide-react';
 
 interface NodeInspectorProps {
@@ -21,6 +32,13 @@ interface NodeInspectorProps {
   projectId: string;
   onClose: () => void;
   onSelectNode: (node: GraphNode | null) => void;
+  graphScope?: 'ast' | 'cpg';
+  analysisMode?: AnalysisMode;
+  onTriggerAction?: (action: 'callers' | 'callees' | 'data_flow' | 'control_flow' | 'impact' | 'find_path', node: GraphNode) => void;
+  callFlowResult?: CallFlowResult | null;
+  impactResult?: ImpactResult | null;
+  flowResult?: FlowResult | null;
+  pathResult?: PathResult | null;
 }
 
 interface ConnectedNeighbor {
@@ -39,6 +57,13 @@ export function NodeInspector({
   projectId,
   onClose,
   onSelectNode,
+  graphScope = 'ast',
+  analysisMode = 'explore',
+  onTriggerAction,
+  callFlowResult,
+  impactResult,
+  flowResult,
+  pathResult,
 }: NodeInspectorProps) {
   const { showToast } = useToast();
   const [snippet, setSnippet] = useState<string | null>(null);
@@ -255,6 +280,214 @@ export function NodeInspector({
             </pre>
           </div>
         )}
+
+        {/* Quick Analysis Actions for CPG */}
+        {graphScope === 'cpg' && onTriggerAction && (
+          <div className="pt-2 border-t border-white/5 space-y-1.5">
+            <span className="text-[10px] text-gray-500 font-semibold uppercase tracking-wider block">
+              Quick Actions
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {(node.label === 'Method' || node.label === 'Function' || node.label === 'Call') && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onTriggerAction('callers', node)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/20 text-[11px] font-medium transition-all active:scale-95"
+                    title="Trace callers of this method"
+                  >
+                    <ArrowDownLeft className="w-3 h-3 text-cyan-400" />
+                    <span>Show Callers</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onTriggerAction('callees', node)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/20 text-[11px] font-medium transition-all active:scale-95"
+                    title="Trace callees invoked by this method"
+                  >
+                    <ArrowUpRight className="w-3 h-3 text-cyan-400" />
+                    <span>Show Callees</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onTriggerAction('control_flow', node)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/20 text-[11px] font-medium transition-all active:scale-95"
+                    title="Trace Control Flow (CFG) within this function"
+                  >
+                    <span>Control Flow</span>
+                  </button>
+                </>
+              )}
+              {(node.label === 'Variable' || node.label === 'Param' || node.label === 'Call') && (
+                <button
+                  type="button"
+                  onClick={() => onTriggerAction('data_flow', node)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-pink-500/10 hover:bg-pink-500/20 text-pink-300 border border-pink-500/20 text-[11px] font-medium transition-all active:scale-95"
+                  title="Trace data flow from this variable"
+                >
+                  <span>Trace Data</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => onTriggerAction('impact', node)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/20 text-[11px] font-medium transition-all active:scale-95"
+                title="Analyze blast radius & dependents"
+              >
+                <Compass className="w-3 h-3 text-purple-400" />
+                <span>Analyze Impact</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onTriggerAction('find_path', node)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-blue-500/20 text-[11px] font-medium transition-all active:scale-95"
+                title="Find path to another node"
+              >
+                <Route className="w-3 h-3 text-blue-400" />
+                <span>Find Path</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Context-Aware Panel: Impact Analysis Results */}
+        {analysisMode === 'impact' && impactResult && (
+          <div className="pt-2 border-t border-purple-500/30 space-y-2 bg-purple-950/20 p-2.5 rounded-xl border">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-purple-300 uppercase tracking-wider flex items-center gap-1">
+                <Compass className="w-3.5 h-3.5 text-purple-400" />
+                Impact Analysis
+              </span>
+              <span className="text-[10px] font-mono text-purple-400 font-bold">
+                {impactResult.direct_count + impactResult.indirect_count} dependents
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-1.5 text-center text-[10px] font-mono">
+              <div className="p-1.5 rounded-lg bg-black/40 border border-white/5">
+                <span className="text-gray-400 block text-[9px]">Direct</span>
+                <span className="font-bold text-white text-xs">{impactResult.direct_count}</span>
+              </div>
+              <div className="p-1.5 rounded-lg bg-black/40 border border-white/5">
+                <span className="text-gray-400 block text-[9px]">Indirect</span>
+                <span className="font-bold text-purple-300 text-xs">{impactResult.indirect_count}</span>
+              </div>
+              <div className="p-1.5 rounded-lg bg-black/40 border border-white/5">
+                <span className="text-gray-400 block text-[9px]">Files</span>
+                <span className="font-bold text-cyan-300 text-xs">{impactResult.affected_file_count}</span>
+              </div>
+            </div>
+            {impactResult.affected_files.length > 0 && (
+              <div className="space-y-1">
+                <span className="text-[9px] text-gray-400 font-semibold uppercase block">Affected Files</span>
+                <div className="max-h-24 overflow-y-auto space-y-0.5 text-[10px] font-mono text-gray-300">
+                  {impactResult.affected_files.map((f) => (
+                    <div key={f} className="truncate px-1.5 py-0.5 rounded bg-black/40">
+                      {f}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Context-Aware Panel: Call Flow Results */}
+        {analysisMode === 'call_flow' && callFlowResult && (
+          <div className="pt-2 border-t border-cyan-500/30 space-y-2 bg-cyan-950/20 p-2.5 rounded-xl border">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1">
+                <Route className="w-3.5 h-3.5 text-cyan-400" />
+                Call Flow ({callFlowResult.direction})
+              </span>
+              <span className="text-[10px] font-mono text-cyan-400 font-bold">
+                {callFlowResult.nodes.length} methods
+              </span>
+            </div>
+            <div className="max-h-32 overflow-y-auto space-y-1">
+              {callFlowResult.nodes.map((n, idx) => (
+                <div
+                  key={`cf-${n.id}-${idx}`}
+                  onClick={() => onSelectNode(n)}
+                  className="p-1.5 rounded-lg bg-black/40 hover:bg-white/10 border border-white/5 cursor-pointer flex items-center justify-between gap-1 text-[11px] font-mono"
+                >
+                  <span className="text-cyan-200 truncate">{n.name}</span>
+                  <span className="text-[9px] text-gray-500 shrink-0">#{n.id}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Context-Aware Panel: Taint & Data Flow Results */}
+        {(analysisMode === 'taint_flow' || analysisMode === 'data_flow') && flowResult && (
+          <div className="pt-2 border-t border-pink-500/30 space-y-2 bg-pink-950/20 p-2.5 rounded-xl border">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-pink-300 uppercase tracking-wider flex items-center gap-1">
+                <ShieldAlert className="w-3.5 h-3.5 text-pink-400" />
+                {flowResult.flow_type || 'Flow Path'}
+              </span>
+              <span className="text-[10px] font-mono text-pink-400 font-bold">
+                {flowResult.steps.length} steps
+              </span>
+            </div>
+            <div className="space-y-1 text-[10px] font-mono">
+              <div className="p-1.5 rounded-lg bg-black/50 border border-white/5 flex items-center justify-between">
+                <span className="text-gray-400">Source:</span>
+                <span className="text-pink-300 truncate max-w-[180px]">{flowResult.source.name}</span>
+              </div>
+              <div className="p-1.5 rounded-lg bg-black/50 border border-white/5 flex items-center justify-between">
+                <span className="text-gray-400">Sink:</span>
+                <span className="text-pink-300 truncate max-w-[180px]">{flowResult.sink.name}</span>
+              </div>
+            </div>
+            <div className="max-h-36 overflow-y-auto space-y-1 pt-1">
+              {flowResult.steps.map((step) => (
+                <div
+                  key={`step-${step.step_index}-${step.node.id}`}
+                  onClick={() => onSelectNode(step.node)}
+                  className="p-1.5 rounded-lg bg-black/40 hover:bg-white/10 border border-white/5 cursor-pointer flex items-center justify-between gap-1 text-[10px] font-mono"
+                >
+                  <span className="text-gray-400 shrink-0">{step.step_index}.</span>
+                  <span className="text-gray-200 truncate flex-1">{step.node.name}</span>
+                  <span className="text-[9px] px-1 py-0.2 rounded bg-pink-500/20 text-pink-300 shrink-0">
+                    {step.edge_type}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Context-Aware Panel: Find Path Results */}
+        {analysisMode === 'find_path' && pathResult && (
+          <div className="pt-2 border-t border-blue-500/30 space-y-2 bg-blue-950/20 p-2.5 rounded-xl border">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-blue-300 uppercase tracking-wider flex items-center gap-1">
+                <Route className="w-3.5 h-3.5 text-blue-400" />
+                Path Result
+              </span>
+              <span className={`text-[10px] font-mono font-bold ${pathResult.found ? 'text-emerald-400' : 'text-amber-400'}`}>
+                {pathResult.found ? `${pathResult.nodes.length} nodes` : 'No path found'}
+              </span>
+            </div>
+            {pathResult.found && (
+              <div className="max-h-36 overflow-y-auto space-y-1">
+                {pathResult.nodes.map((n, idx) => (
+                  <div
+                    key={`p-${n.id}-${idx}`}
+                    onClick={() => onSelectNode(n)}
+                    className="p-1.5 rounded-lg bg-black/40 hover:bg-white/10 border border-white/5 cursor-pointer flex items-center justify-between gap-1 text-[10px] font-mono"
+                  >
+                    <span className="text-gray-400 shrink-0">{idx + 1}.</span>
+                    <span className="text-blue-200 truncate flex-1">{n.name}</span>
+                    <span className="text-[9px] text-gray-500 shrink-0">{n.label}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
 
         {/* Inbound & Outbound Connections Navigation Tabs */}
         <div className="space-y-2 pt-1 border-t border-white/5">

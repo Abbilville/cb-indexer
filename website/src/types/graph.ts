@@ -54,3 +54,61 @@ export interface GraphFilterState {
   selectedNode: GraphNode | null;
   selectedEdge: GraphEdge | null;
 }
+
+export type AnalysisMode =
+  | 'explore'
+  | 'call_flow'
+  | 'data_flow'
+  | 'taint_flow'
+  | 'control_flow'
+  | 'impact'
+  | 'find_path';
+
+export interface NeighborhoodConfig {
+  depth: number;
+  inbound: boolean;
+  outbound: boolean;
+}
+
+export interface CallFlowResult {
+  direction: 'callers' | 'callees' | 'both';
+  depth: number;
+  root_node: GraphNode;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  paths?: number[][];
+}
+
+export interface ImpactResult {
+  target_node: GraphNode;
+  direct_callers: GraphNode[];
+  indirect_callers: GraphNode[];
+  affected_files: string[];
+  direct_count: number;
+  indirect_count: number;
+  affected_file_count: number;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+export interface PathResult {
+  found: boolean;
+  from_node: GraphNode;
+  to_node: GraphNode;
+  relationship?: string;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+export interface FlowStep {
+  step_index: number;
+  node: GraphNode;
+  edge_type: string;
+}
+
+export interface FlowResult {
+  flow_type: string;
+  source: GraphNode;
+  sink: GraphNode;
+  steps: FlowStep[];
+}

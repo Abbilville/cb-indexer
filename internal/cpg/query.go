@@ -615,3 +615,566 @@ func GetCPGTypeRelations(dbPath string, typeName string) ([]CPGTypeRelationResul
 	}
 	return results, nil
 }
+
+// GetCPGCallFlow traces multi-hop call hierarchies (callers, callees, or both).
+func GetCPGCallFlow(dbPath string, symbol string, direction string, maxDepth int) (*CPGCallFlowResult, error) {
+	db, err := OpenCPGDB(dbPath, true)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	var root CPGNode
+	var propStr string
+	err = db.QueryRow(`
+		SELECT id, project, label, name, qualified_name, file_path, start_line, end_line, properties
+		FROM nodes
+		WHERE (name = ? OR qualified_name LIKE ?) AND label IN ('Method', 'Function', 'Call')
+		ORDER BY CASE WHEN name = ? THEN 0 ELSE 1 END
+		LIMIT 1
+	`, symbol, "%"+symbol+"%", symbol).Scan(
+		&root.ID, &root.Project, &root.Label, &root.Name, &root.QualifiedName,
+		&root.FilePath, &root.StartLine, &root.EndLine, &propStr,
+	)
+	if err != nil {
+		// Fallback to any node matching the symbol
+		err = db.QueryRow(`
+			SELECT id, project, label, name, qualified_name, file_path, start_line, end_line, properties
+			FROM nodes WHERE (name = ? OR qualified_name LIKE ?) LIMIT 1
+		`, symbol, "%"+symbol+"%").Scan(
+			&root.ID, &root.Project, &root.Label, &root.Name, &root.QualifiedName,
+			&root.FilePath, &root.StartLine, &root.EndLine, &propStr,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("symbol not found in CPG: %s", symbol)
+		}
+	}
+	_ = json.Unmarshal([]byte(propStr), &root.Properties)
+	root.Val = NodeWeight(root.Label)
+
+	dir := strings.ToLower(strings.TrimSpace(direction))
+	if dir != "callers" && dir != "callees" && dir != "both" {
+		dir = "both"
+	}
+
+	if maxDepth <= 0 {
+		maxDepth = 3
+	} else if maxDepth > 6 {
+		maxDepth = 6
+	}
+
+	nodesMap := make(map[int64]CPGNode)
+	nodesMap[root.ID] = root
+	edgesMap := make(map[string]CPGEdge)
+
+	currentLevel := []int64{root.ID}
+	visited := make(map[int64]bool)
+	visited[root.ID] = true
+
+	for depth := 1; depth <= maxDepth && len(currentLevel) > 0; depth++ {
+		var nextLevel []int64
+
+		for _, currID := range currentLevel {
+			// 1. Callers (incoming CALL edges)
+			if dir == "callers" || dir == "both" {
+				rows, err := db.Query(`
+					SELECT n.id, n.project, n.label, n.name, n.qualified_name, n.file_path, n.start_line, n.end_line, n.properties,
+					       e.id, e.project, e.source_id, e.target_id, e.type, e.properties
+					FROM edges e
+					JOIN nodes n ON e.source_id = n.id
+					WHERE e.target_id = ? AND e.type = 'CALL'
+					LIMIT 30
+				`, currID)
+				if err == nil {
+					for rows.Next() {
+						var n CPGNode
+						var e CPGEdge
+						var nProp, eProp string
+						if err := rows.Scan(&n.ID, &n.Project, &n.Label, &n.Name, &n.QualifiedName, &n.FilePath, &n.StartLine, &n.EndLine, &nProp,
+							&e.ID, &e.Project, &e.SourceID, &e.TargetID, &e.Type, &eProp); err == nil {
+							_ = json.Unmarshal([]byte(nProp), &n.Properties)
+							_ = json.Unmarshal([]byte(eProp), &e.Properties)
+							n.Val = NodeWeight(n.Label)
+							nodesMap[n.ID] = n
+							edgeKey := fmt.Sprintf("%d-%d-%s", e.SourceID, e.TargetID, e.Type)
+							edgesMap[edgeKey] = e
+							if !visited[n.ID] {
+								visited[n.ID] = true
+								nextLevel = append(nextLevel, n.ID)
+							}
+						}
+					}
+					rows.Close()
+				}
+			}
+
+			// 2. Callees (outgoing CALL edges)
+			if dir == "callees" || dir == "both" {
+				rows, err := db.Query(`
+					SELECT n.id, n.project, n.label, n.name, n.qualified_name, n.file_path, n.start_line, n.end_line, n.properties,
+					       e.id, e.project, e.source_id, e.target_id, e.type, e.properties
+					FROM edges e
+					JOIN nodes n ON e.target_id = n.id
+					WHERE e.source_id = ? AND e.type = 'CALL'
+					LIMIT 30
+				`, currID)
+				if err == nil {
+					for rows.Next() {
+						var n CPGNode
+						var e CPGEdge
+						var nProp, eProp string
+						if err := rows.Scan(&n.ID, &n.Project, &n.Label, &n.Name, &n.QualifiedName, &n.FilePath, &n.StartLine, &n.EndLine, &nProp,
+							&e.ID, &e.Project, &e.SourceID, &e.TargetID, &e.Type, &eProp); err == nil {
+							_ = json.Unmarshal([]byte(nProp), &n.Properties)
+							_ = json.Unmarshal([]byte(eProp), &e.Properties)
+							n.Val = NodeWeight(n.Label)
+							nodesMap[n.ID] = n
+							edgeKey := fmt.Sprintf("%d-%d-%s", e.SourceID, e.TargetID, e.Type)
+							edgesMap[edgeKey] = e
+							if !visited[n.ID] {
+								visited[n.ID] = true
+								nextLevel = append(nextLevel, n.ID)
+							}
+						}
+					}
+					rows.Close()
+				}
+			}
+		}
+		currentLevel = nextLevel
+	}
+
+	var nodesList []CPGNode
+	for _, n := range nodesMap {
+		nodesList = append(nodesList, n)
+	}
+	var edgesList []CPGEdge
+	for _, e := range edgesMap {
+		edgesList = append(edgesList, e)
+	}
+
+	return &CPGCallFlowResult{
+		Direction: dir,
+		Depth:     maxDepth,
+		RootNode:  root,
+		Nodes:     nodesList,
+		Edges:     edgesList,
+	}, nil
+}
+
+// GetCPGImpact evaluates the blast radius and dependent callers of a node.
+func GetCPGImpact(dbPath string, symbol string) (*CPGImpactResult, error) {
+	db, err := OpenCPGDB(dbPath, true)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	var target CPGNode
+	var propStr string
+	err = db.QueryRow(`
+		SELECT id, project, label, name, qualified_name, file_path, start_line, end_line, properties
+		FROM nodes
+		WHERE (name = ? OR qualified_name LIKE ?)
+		ORDER BY CASE WHEN name = ? THEN 0 ELSE 1 END
+		LIMIT 1
+	`, symbol, "%"+symbol+"%", symbol).Scan(
+		&target.ID, &target.Project, &target.Label, &target.Name, &target.QualifiedName,
+		&target.FilePath, &target.StartLine, &target.EndLine, &propStr,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("symbol not found for impact analysis: %s", symbol)
+	}
+	_ = json.Unmarshal([]byte(propStr), &target.Properties)
+	target.Val = NodeWeight(target.Label)
+
+	directMap := make(map[int64]CPGNode)
+	indirectMap := make(map[int64]CPGNode)
+	allNodesMap := make(map[int64]CPGNode)
+	allNodesMap[target.ID] = target
+	edgesMap := make(map[string]CPGEdge)
+	filesMap := make(map[string]bool)
+	if target.FilePath != "" {
+		filesMap[target.FilePath] = true
+	}
+
+	// 1. Direct callers
+	directRows, err := db.Query(`
+		SELECT n.id, n.project, n.label, n.name, n.qualified_name, n.file_path, n.start_line, n.end_line, n.properties,
+		       e.id, e.project, e.source_id, e.target_id, e.type, e.properties
+		FROM edges e
+		JOIN nodes n ON e.source_id = n.id
+		WHERE e.target_id = ? AND e.type IN ('CALL', 'REF', 'TYPE')
+	`, target.ID)
+	if err == nil {
+		for directRows.Next() {
+			var n CPGNode
+			var e CPGEdge
+			var nProp, eProp string
+			if err := directRows.Scan(&n.ID, &n.Project, &n.Label, &n.Name, &n.QualifiedName, &n.FilePath, &n.StartLine, &n.EndLine, &nProp,
+				&e.ID, &e.Project, &e.SourceID, &e.TargetID, &e.Type, &eProp); err == nil {
+				_ = json.Unmarshal([]byte(nProp), &n.Properties)
+				_ = json.Unmarshal([]byte(eProp), &e.Properties)
+				n.Val = NodeWeight(n.Label)
+				directMap[n.ID] = n
+				allNodesMap[n.ID] = n
+				if n.FilePath != "" {
+					filesMap[n.FilePath] = true
+				}
+				edgesMap[fmt.Sprintf("%d-%d-%s", e.SourceID, e.TargetID, e.Type)] = e
+			}
+		}
+		directRows.Close()
+	}
+
+	// 2. Transitive indirect callers (depth 2 and 3)
+	frontier := make([]int64, 0, len(directMap))
+	visited := make(map[int64]bool)
+	visited[target.ID] = true
+	for id := range directMap {
+		visited[id] = true
+		frontier = append(frontier, id)
+	}
+
+	for hop := 0; hop < 2 && len(frontier) > 0; hop++ {
+		var nextFrontier []int64
+		for _, fID := range frontier {
+			rows, err := db.Query(`
+				SELECT n.id, n.project, n.label, n.name, n.qualified_name, n.file_path, n.start_line, n.end_line, n.properties,
+				       e.id, e.project, e.source_id, e.target_id, e.type, e.properties
+				FROM edges e
+				JOIN nodes n ON e.source_id = n.id
+				WHERE e.target_id = ? AND e.type IN ('CALL', 'REF')
+				LIMIT 20
+			`, fID)
+			if err != nil {
+				continue
+			}
+			for rows.Next() {
+				var n CPGNode
+				var e CPGEdge
+				var nProp, eProp string
+				if err := rows.Scan(&n.ID, &n.Project, &n.Label, &n.Name, &n.QualifiedName, &n.FilePath, &n.StartLine, &n.EndLine, &nProp,
+					&e.ID, &e.Project, &e.SourceID, &e.TargetID, &e.Type, &eProp); err == nil {
+					_ = json.Unmarshal([]byte(nProp), &n.Properties)
+					_ = json.Unmarshal([]byte(eProp), &e.Properties)
+					n.Val = NodeWeight(n.Label)
+					if !visited[n.ID] {
+						visited[n.ID] = true
+						indirectMap[n.ID] = n
+						allNodesMap[n.ID] = n
+						if n.FilePath != "" {
+							filesMap[n.FilePath] = true
+						}
+						nextFrontier = append(nextFrontier, n.ID)
+					}
+					edgesMap[fmt.Sprintf("%d-%d-%s", e.SourceID, e.TargetID, e.Type)] = e
+				}
+			}
+			rows.Close()
+		}
+		frontier = nextFrontier
+	}
+
+	var directList, indirectList, allNodes []CPGNode
+	for _, n := range directMap {
+		directList = append(directList, n)
+	}
+	for _, n := range indirectMap {
+		indirectList = append(indirectList, n)
+	}
+	for _, n := range allNodesMap {
+		allNodes = append(allNodes, n)
+	}
+	var allEdges []CPGEdge
+	for _, e := range edgesMap {
+		allEdges = append(allEdges, e)
+	}
+	var affectedFiles []string
+	for fp := range filesMap {
+		affectedFiles = append(affectedFiles, fp)
+	}
+	sort.Strings(affectedFiles)
+
+	return &CPGImpactResult{
+		TargetNode:        target,
+		DirectCallers:     directList,
+		IndirectCallers:   indirectList,
+		AffectedFiles:     affectedFiles,
+		DirectCount:       len(directList),
+		IndirectCount:     len(indirectList),
+		AffectedFileCount: len(affectedFiles),
+		Nodes:             allNodes,
+		Edges:             allEdges,
+	}, nil
+}
+
+// FindCPGPath searches for the shortest path between two nodes in CPG.
+func FindCPGPath(dbPath string, fromSymbol, toSymbol, relType string) (*CPGPathResult, error) {
+	db, err := OpenCPGDB(dbPath, true)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	var fromNode, toNode CPGNode
+	var fromProp, toProp string
+
+	err = db.QueryRow(`
+		SELECT id, project, label, name, qualified_name, file_path, start_line, end_line, properties
+		FROM nodes WHERE name = ? OR qualified_name LIKE ?
+		ORDER BY CASE WHEN name = ? THEN 0 ELSE 1 END LIMIT 1
+	`, fromSymbol, "%"+fromSymbol+"%", fromSymbol).Scan(
+		&fromNode.ID, &fromNode.Project, &fromNode.Label, &fromNode.Name, &fromNode.QualifiedName,
+		&fromNode.FilePath, &fromNode.StartLine, &fromNode.EndLine, &fromProp,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("starting node '%s' not found", fromSymbol)
+	}
+	_ = json.Unmarshal([]byte(fromProp), &fromNode.Properties)
+
+	err = db.QueryRow(`
+		SELECT id, project, label, name, qualified_name, file_path, start_line, end_line, properties
+		FROM nodes WHERE name = ? OR qualified_name LIKE ?
+		ORDER BY CASE WHEN name = ? THEN 0 ELSE 1 END LIMIT 1
+	`, toSymbol, "%"+toSymbol+"%", toSymbol).Scan(
+		&toNode.ID, &toNode.Project, &toNode.Label, &toNode.Name, &toNode.QualifiedName,
+		&toNode.FilePath, &toNode.StartLine, &toNode.EndLine, &toProp,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("destination node '%s' not found", toSymbol)
+	}
+	_ = json.Unmarshal([]byte(toProp), &toNode.Properties)
+
+	// BFS queue
+	type queueItem struct {
+		nodeID int64
+		path   []int64
+		edges  []CPGEdge
+	}
+
+	queue := []queueItem{{nodeID: fromNode.ID, path: []int64{fromNode.ID}}}
+	visited := make(map[int64]bool)
+	visited[fromNode.ID] = true
+
+	var foundPath []int64
+	var foundEdges []CPGEdge
+
+	typeFilter := ""
+	var typeArgs []any
+	if relType != "" && strings.ToUpper(relType) != "ALL" {
+		typeFilter = " AND e.type = ?"
+		typeArgs = append(typeArgs, strings.ToUpper(relType))
+	}
+
+	for len(queue) > 0 {
+		curr := queue[0]
+		queue = queue[1:]
+
+		if curr.nodeID == toNode.ID {
+			foundPath = curr.path
+			foundEdges = curr.edges
+			break
+		}
+
+		if len(curr.path) >= 8 {
+			continue
+		}
+
+		querySQL := fmt.Sprintf(`
+			SELECT e.id, e.project, e.source_id, e.target_id, e.type, e.properties
+			FROM edges e
+			WHERE e.source_id = ?%s
+			LIMIT 50
+		`, typeFilter)
+
+		args := append([]any{curr.nodeID}, typeArgs...)
+		rows, err := db.Query(querySQL, args...)
+		if err != nil {
+			continue
+		}
+
+		for rows.Next() {
+			var e CPGEdge
+			var propStr string
+			if err := rows.Scan(&e.ID, &e.Project, &e.SourceID, &e.TargetID, &e.Type, &propStr); err == nil {
+				_ = json.Unmarshal([]byte(propStr), &e.Properties)
+				if !visited[e.TargetID] {
+					visited[e.TargetID] = true
+					newPath := append([]int64{}, curr.path...)
+					newPath = append(newPath, e.TargetID)
+					newEdges := append([]CPGEdge{}, curr.edges...)
+					newEdges = append(newEdges, e)
+					queue = append(queue, queueItem{nodeID: e.TargetID, path: newPath, edges: newEdges})
+				}
+			}
+		}
+		rows.Close()
+	}
+
+	if len(foundPath) == 0 {
+		return &CPGPathResult{
+			Found:        false,
+			FromNode:     fromNode,
+			ToNode:       toNode,
+			Relationship: relType,
+		}, nil
+	}
+
+	// Hydrate path nodes
+	var pathNodes []CPGNode
+	for _, id := range foundPath {
+		var n CPGNode
+		var pStr string
+		if err := db.QueryRow(`
+			SELECT id, project, label, name, qualified_name, file_path, start_line, end_line, properties
+			FROM nodes WHERE id = ?
+		`, id).Scan(&n.ID, &n.Project, &n.Label, &n.Name, &n.QualifiedName, &n.FilePath, &n.StartLine, &n.EndLine, &pStr); err == nil {
+			_ = json.Unmarshal([]byte(pStr), &n.Properties)
+			n.Val = NodeWeight(n.Label)
+			pathNodes = append(pathNodes, n)
+		}
+	}
+
+	return &CPGPathResult{
+		Found:        true,
+		FromNode:     fromNode,
+		ToNode:       toNode,
+		Relationship: relType,
+		Nodes:        pathNodes,
+		Edges:        foundEdges,
+	}, nil
+}
+
+// GetCPGTaintFlow traces data flows between a source and a sink symbol.
+func GetCPGTaintFlow(dbPath string, sourceSymbol, sinkSymbol string) (*CPGFlowResult, error) {
+	// Leverage existing GetCPGDataFlow with source and sink
+	return GetCPGDataFlow(dbPath, sourceSymbol, sinkSymbol)
+}
+
+// GetCPGNeighborhood fetches a node and its neighbors up to a given depth.
+func GetCPGNeighborhood(dbPath string, nodeID int64, depth int, includeInbound, includeOutbound bool) (*graphmeta.GraphPayload, error) {
+	db, err := OpenCPGDB(dbPath, true)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	if depth <= 0 {
+		depth = 1
+	} else if depth > 3 {
+		depth = 3
+	}
+
+	nodesMap := make(map[int64]graphmeta.GraphNode)
+	edgesMap := make(map[string]graphmeta.GraphEdge)
+
+	// Get root node
+	var root graphmeta.GraphNode
+	var propStr string
+	if err := db.QueryRow(`
+		SELECT id, project, label, name, qualified_name, file_path, start_line, end_line, properties
+		FROM nodes WHERE id = ?
+	`, nodeID).Scan(&root.ID, &root.Project, &root.Label, &root.Name, &root.QualifiedName,
+		&root.FilePath, &root.StartLine, &root.EndLine, &propStr); err != nil {
+		return nil, fmt.Errorf("node %d not found: %w", nodeID, err)
+	}
+	_ = json.Unmarshal([]byte(propStr), &root.Properties)
+	root.Val = NodeWeight(root.Label)
+	nodesMap[int64(root.ID)] = root
+
+	currentLevel := []int64{int64(root.ID)}
+	visited := make(map[int64]bool)
+	visited[int64(root.ID)] = true
+
+	for d := 1; d <= depth && len(currentLevel) > 0; d++ {
+		var nextLevel []int64
+
+		for _, currID := range currentLevel {
+			// Outbound
+			if includeOutbound {
+				rows, err := db.Query(`
+					SELECT n.id, n.project, n.label, n.name, n.qualified_name, n.file_path, n.start_line, n.end_line, n.properties,
+					       e.id, e.project, e.source_id, e.target_id, e.type, e.properties
+					FROM edges e
+					JOIN nodes n ON e.target_id = n.id
+					WHERE e.source_id = ?
+					LIMIT 50
+				`, currID)
+				if err == nil {
+					for rows.Next() {
+						var n graphmeta.GraphNode
+						var e graphmeta.GraphEdge
+						var nP, eP string
+						if err := rows.Scan(&n.ID, &n.Project, &n.Label, &n.Name, &n.QualifiedName, &n.FilePath, &n.StartLine, &n.EndLine, &nP,
+							&e.ID, &e.Project, &e.Source, &e.Target, &e.Type, &eP); err == nil {
+							_ = json.Unmarshal([]byte(nP), &n.Properties)
+							_ = json.Unmarshal([]byte(eP), &e.Properties)
+							n.Val = NodeWeight(n.Label)
+							nodesMap[int64(n.ID)] = n
+							edgesMap[fmt.Sprintf("%d-%d-%s", e.Source, e.Target, e.Type)] = e
+							if !visited[int64(n.ID)] {
+								visited[int64(n.ID)] = true
+								nextLevel = append(nextLevel, int64(n.ID))
+							}
+						}
+					}
+					rows.Close()
+				}
+			}
+
+			// Inbound
+			if includeInbound {
+				rows, err := db.Query(`
+					SELECT n.id, n.project, n.label, n.name, n.qualified_name, n.file_path, n.start_line, n.end_line, n.properties,
+					       e.id, e.project, e.source_id, e.target_id, e.type, e.properties
+					FROM edges e
+					JOIN nodes n ON e.source_id = n.id
+					WHERE e.target_id = ?
+					LIMIT 50
+				`, currID)
+				if err == nil {
+					for rows.Next() {
+						var n graphmeta.GraphNode
+						var e graphmeta.GraphEdge
+						var nP, eP string
+						if err := rows.Scan(&n.ID, &n.Project, &n.Label, &n.Name, &n.QualifiedName, &n.FilePath, &n.StartLine, &n.EndLine, &nP,
+							&e.ID, &e.Project, &e.Source, &e.Target, &e.Type, &eP); err == nil {
+							_ = json.Unmarshal([]byte(nP), &n.Properties)
+							_ = json.Unmarshal([]byte(eP), &e.Properties)
+							n.Val = NodeWeight(n.Label)
+							nodesMap[int64(n.ID)] = n
+							edgesMap[fmt.Sprintf("%d-%d-%s", e.Source, e.Target, e.Type)] = e
+							if !visited[int64(n.ID)] {
+								visited[int64(n.ID)] = true
+								nextLevel = append(nextLevel, int64(n.ID))
+							}
+						}
+					}
+					rows.Close()
+				}
+			}
+		}
+		currentLevel = nextLevel
+	}
+
+	var nodesList []graphmeta.GraphNode
+	for _, n := range nodesMap {
+		nodesList = append(nodesList, n)
+	}
+	var linksList []graphmeta.GraphEdge
+	for _, e := range edgesMap {
+		linksList = append(linksList, e)
+	}
+
+	return &graphmeta.GraphPayload{
+		Project:       root.Project,
+		Scope:         "cpg",
+		TotalNodes:    len(nodesList),
+		TotalEdges:    len(linksList),
+		ReturnedNodes: len(nodesList),
+		ReturnedEdges: len(linksList),
+		Nodes:         nodesList,
+		Links:         linksList,
+	}, nil
+}

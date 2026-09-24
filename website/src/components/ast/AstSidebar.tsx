@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { GraphNode, GraphPayload } from '../../types/graph';
+import { GraphNode, GraphPayload, AnalysisMode } from '../../types/graph';
 import { RepoDetail } from '../../types/project';
 import { ProjectTreeView } from './ProjectTreeView';
 import { AstAskTab } from './AstAskTab';
@@ -15,6 +15,11 @@ import {
   Search,
   X,
   Sparkles,
+  Network,
+  GitBranch,
+  Play,
+  Route,
+  Compass,
 } from 'lucide-react';
 
 interface AstSidebarProps {
@@ -43,6 +48,34 @@ interface AstSidebarProps {
   onChangeNodeSize?: (size: number) => void;
   nodeOpacity?: number;
   onChangeNodeOpacity?: (opacity: number) => void;
+  graphScope?: 'ast' | 'cpg';
+  onChangeGraphScope?: (scope: 'ast' | 'cpg') => void;
+  analysisMode?: AnalysisMode;
+  onChangeAnalysisMode?: (mode: AnalysisMode) => void;
+  neighborhoodDepth?: number;
+  onChangeNeighborhoodDepth?: (depth: number) => void;
+  neighborhoodInbound?: boolean;
+  onChangeNeighborhoodInbound?: (inbound: boolean) => void;
+  neighborhoodOutbound?: boolean;
+  onChangeNeighborhoodOutbound?: (outbound: boolean) => void;
+  callFlowDirection?: 'callers' | 'callees' | 'both';
+  onChangeCallFlowDirection?: (dir: 'callers' | 'callees' | 'both') => void;
+  callFlowDepth?: number;
+  onChangeCallFlowDepth?: (depth: number) => void;
+  taintSource?: string;
+  onChangeTaintSource?: (src: string) => void;
+  taintSink?: string;
+  onChangeTaintSink?: (sink: string) => void;
+  onTraceTaintFlow?: () => void;
+  pathFrom?: string;
+  onChangePathFrom?: (from: string) => void;
+  pathTo?: string;
+  onChangePathTo?: (to: string) => void;
+  pathRel?: string;
+  onChangePathRel?: (rel: string) => void;
+  onFindPath?: () => void;
+  hasActiveAnalysisPath?: boolean;
+  onClearAnalysisPath?: () => void;
 }
 
 export function AstSidebar({
@@ -71,6 +104,34 @@ export function AstSidebar({
   onChangeNodeSize,
   nodeOpacity = 1.0,
   onChangeNodeOpacity,
+  graphScope = 'ast',
+  onChangeGraphScope,
+  analysisMode = 'explore',
+  onChangeAnalysisMode,
+  neighborhoodDepth = 1,
+  onChangeNeighborhoodDepth,
+  neighborhoodInbound = true,
+  onChangeNeighborhoodInbound,
+  neighborhoodOutbound = true,
+  onChangeNeighborhoodOutbound,
+  callFlowDirection = 'both',
+  onChangeCallFlowDirection,
+  callFlowDepth = 3,
+  onChangeCallFlowDepth,
+  taintSource = '',
+  onChangeTaintSource,
+  taintSink = '',
+  onChangeTaintSink,
+  onTraceTaintFlow,
+  pathFrom = '',
+  onChangePathFrom,
+  pathTo = '',
+  onChangePathTo,
+  pathRel = 'CALL',
+  onChangePathRel,
+  onFindPath,
+  hasActiveAnalysisPath = false,
+  onClearAnalysisPath,
 }: AstSidebarProps) {
   const [activeTab, setActiveTab] = useState<'ask' | 'filters' | 'tree'>('filters');
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -132,6 +193,50 @@ export function AstSidebar({
       ) : (
         /* When Expanded: Full Sidebar Header & Tabs */
         <div className="flex flex-col h-full overflow-hidden">
+          {/* Graph Source Selector: AST vs CPG */}
+          <div className="p-3 border-b border-white/10 bg-black/30 shrink-0">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+                Graph Source
+              </span>
+              <span className={`text-[9px] font-mono px-1.5 py-0.2 rounded border ${
+                graphScope === 'cpg'
+                  ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20'
+                  : 'bg-purple-500/10 text-purple-300 border-purple-500/20'
+              }`}>
+                {graphScope === 'cpg' ? 'Joern CPG' : 'Tree-sitter'}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5 p-1 bg-black/60 border border-white/10 rounded-xl text-xs font-mono">
+              <button
+                type="button"
+                onClick={() => onChangeGraphScope?.('ast')}
+                className={`flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-center transition-all ${
+                  graphScope === 'ast'
+                    ? 'bg-purple-600/40 text-purple-200 border border-purple-500/50 font-semibold shadow-sm'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+                title="Tree-sitter Abstract Syntax Tree"
+              >
+                <GitBranch className="w-3.5 h-3.5" />
+                <span>AST</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onChangeGraphScope?.('cpg')}
+                className={`flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-center transition-all ${
+                  graphScope === 'cpg'
+                    ? 'bg-cyan-600/40 text-cyan-200 border border-cyan-500/50 font-semibold shadow-sm'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+                title="Joern Code Property Graph"
+              >
+                <Network className="w-3.5 h-3.5" />
+                <span>CPG</span>
+              </button>
+            </div>
+          </div>
+
           {/* Repository Selector Dropdown */}
           <div className="p-3.5 border-b border-white/10 bg-black/20 shrink-0">
             <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-1.5 flex items-center gap-1.5">
@@ -226,6 +331,227 @@ export function AstSidebar({
                   )}
                 </div>
               </div>
+              {/* CPG Analysis Mode & Neighborhood Controls */}
+              {graphScope === 'cpg' && (
+                <div className="space-y-3 p-3 rounded-xl bg-black/40 border border-cyan-500/20 animate-in fade-in">
+                  {/* Analysis Mode Header */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Compass className="w-3.5 h-3.5 text-cyan-400" />
+                      Analysis Mode
+                    </span>
+                    {hasActiveAnalysisPath && (
+                      <button
+                        type="button"
+                        onClick={onClearAnalysisPath}
+                        className="text-[10px] font-mono text-amber-400 hover:text-amber-300 underline"
+                      >
+                        Clear Path
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Analysis Mode Select */}
+                  <div className="relative">
+                    <select
+                      value={analysisMode}
+                      onChange={(e) => onChangeAnalysisMode?.(e.target.value as AnalysisMode)}
+                      className="w-full appearance-none pl-3 pr-8 py-1.5 bg-black/60 border border-cyan-500/30 rounded-xl text-xs font-mono text-cyan-200 focus:outline-none focus:border-cyan-400 cursor-pointer"
+                    >
+                      <option value="explore">Explore (Standard)</option>
+                      <option value="call_flow">Call Flow</option>
+                      <option value="data_flow">Data Flow</option>
+                      <option value="taint_flow">Taint Flow</option>
+                      <option value="control_flow">Control Flow</option>
+                      <option value="impact">Impact Analysis</option>
+                      <option value="find_path">Find Path</option>
+                    </select>
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-cyan-400 text-[10px] pointer-events-none">
+                      ▼
+                    </span>
+                  </div>
+
+                  {/* Neighborhood Controls (Explore & standard view) */}
+                  {analysisMode === 'explore' && (
+                    <div className="pt-2 border-t border-white/5 space-y-2">
+                      <div className="flex items-center justify-between text-[10px] text-gray-400">
+                        <span className="font-semibold uppercase tracking-wider">Neighborhood Scope</span>
+                        <span className="font-mono text-cyan-300">{neighborhoodDepth} hop(s)</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1 p-0.5 rounded-lg bg-black/60 border border-white/10 text-xs font-mono">
+                          {[1, 2, 3].map((d) => (
+                            <button
+                              key={d}
+                              type="button"
+                              onClick={() => onChangeNeighborhoodDepth?.(d)}
+                              className={`px-2.5 py-0.5 rounded text-[11px] transition-all ${
+                                neighborhoodDepth === d
+                                  ? 'bg-cyan-500/30 text-cyan-200 font-semibold border border-cyan-500/40'
+                                  : 'text-gray-400 hover:text-white'
+                              }`}
+                            >
+                              {d}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex items-center gap-2.5 text-xs font-mono">
+                          <label className="flex items-center gap-1 cursor-pointer select-none text-[11px] text-gray-300">
+                            <input
+                              type="checkbox"
+                              checked={neighborhoodInbound}
+                              onChange={(e) => onChangeNeighborhoodInbound?.(e.target.checked)}
+                              className="w-3.5 h-3.5 rounded accent-cyan-500"
+                            />
+                            <span>In</span>
+                          </label>
+                          <label className="flex items-center gap-1 cursor-pointer select-none text-[11px] text-gray-300">
+                            <input
+                              type="checkbox"
+                              checked={neighborhoodOutbound}
+                              onChange={(e) => onChangeNeighborhoodOutbound?.(e.target.checked)}
+                              className="w-3.5 h-3.5 rounded accent-cyan-500"
+                            />
+                            <span>Out</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Call Flow Mode Controls */}
+                  {analysisMode === 'call_flow' && (
+                    <div className="pt-2 border-t border-white/5 space-y-2 text-xs">
+                      <div className="flex items-center justify-between text-[10px] text-gray-400">
+                        <span className="font-semibold uppercase tracking-wider">Direction</span>
+                        <span className="font-mono text-cyan-300 capitalize">{callFlowDirection}</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1 p-0.5 rounded-lg bg-black/60 border border-white/10 text-[11px] font-mono">
+                        {(['callers', 'callees', 'both'] as const).map((dir) => (
+                          <button
+                            key={dir}
+                            type="button"
+                            onClick={() => onChangeCallFlowDirection?.(dir)}
+                            className={`py-1 rounded text-center transition-all capitalize ${
+                              callFlowDirection === dir
+                                ? 'bg-cyan-600/30 text-cyan-200 border border-cyan-500/40 font-semibold'
+                                : 'text-gray-400 hover:text-white'
+                            }`}
+                          >
+                            {dir}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex items-center justify-between pt-1 text-[10px] text-gray-400">
+                        <span>Call Depth:</span>
+                        <div className="flex items-center gap-1 font-mono">
+                          {[1, 2, 3, 5].map((d) => (
+                            <button
+                              key={d}
+                              type="button"
+                              onClick={() => onChangeCallFlowDepth?.(d)}
+                              className={`px-2 py-0.5 rounded text-[10px] ${
+                                callFlowDepth === d ? 'bg-cyan-500/30 text-cyan-200 font-bold' : 'text-gray-500 hover:text-white'
+                              }`}
+                            >
+                              {d}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-gray-500">
+                        Click any function or method in the graph to inspect its multi-hop call chain.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Taint Flow Mode Controls */}
+                  {analysisMode === 'taint_flow' && (
+                    <div className="pt-2 border-t border-white/5 space-y-2">
+                      <div className="space-y-1">
+                        <span className="text-[10px] text-gray-400 font-semibold uppercase">Source (Input)</span>
+                        <input
+                          type="text"
+                          value={taintSource}
+                          onChange={(e) => onChangeTaintSource?.(e.target.value)}
+                          placeholder="e.g. req.body, amount, id"
+                          className="w-full px-2.5 py-1 bg-black/60 border border-white/10 rounded-lg text-xs font-mono text-cyan-200"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[10px] text-gray-400 font-semibold uppercase">Sink (Execution Target)</span>
+                        <input
+                          type="text"
+                          value={taintSink}
+                          onChange={(e) => onChangeTaintSink?.(e.target.value)}
+                          placeholder="e.g. query, exec, chargeCard"
+                          className="w-full px-2.5 py-1 bg-black/60 border border-white/10 rounded-lg text-xs font-mono text-cyan-200"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={onTraceTaintFlow}
+                        disabled={!taintSource.trim()}
+                        className="w-full py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-sm"
+                      >
+                        <Play className="w-3 h-3 fill-current" />
+                        <span>Trace Taint Path</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Find Path Mode Controls */}
+                  {analysisMode === 'find_path' && (
+                    <div className="pt-2 border-t border-white/5 space-y-2">
+                      <div className="space-y-1">
+                        <span className="text-[10px] text-gray-400 font-semibold uppercase">From Symbol</span>
+                        <input
+                          type="text"
+                          value={pathFrom}
+                          onChange={(e) => onChangePathFrom?.(e.target.value)}
+                          placeholder="Starting node / symbol"
+                          className="w-full px-2.5 py-1 bg-black/60 border border-white/10 rounded-lg text-xs font-mono text-cyan-200"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[10px] text-gray-400 font-semibold uppercase">To Symbol</span>
+                        <input
+                          type="text"
+                          value={pathTo}
+                          onChange={(e) => onChangePathTo?.(e.target.value)}
+                          placeholder="Target node / symbol"
+                          className="w-full px-2.5 py-1 bg-black/60 border border-white/10 rounded-lg text-xs font-mono text-cyan-200"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[10px] text-gray-400 font-semibold uppercase">Relationship</span>
+                        <select
+                          value={pathRel}
+                          onChange={(e) => onChangePathRel?.(e.target.value)}
+                          className="w-full px-2.5 py-1 bg-black/60 border border-white/10 rounded-lg text-xs font-mono text-gray-200"
+                        >
+                          <option value="ALL">Any Relationship</option>
+                          <option value="CALL">Calls Only</option>
+                          <option value="CFG">Control Flow (CFG)</option>
+                          <option value="DATA_FLOW">Data Flow</option>
+                          <option value="REF">References (REF)</option>
+                          <option value="TYPE">Type Relations</option>
+                        </select>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={onFindPath}
+                        disabled={!pathFrom.trim() || !pathTo.trim()}
+                        className="w-full py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-sm"
+                      >
+                        <Route className="w-3 h-3" />
+                        <span>Find Shortest Path</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
 
               {/* Display & Rendering Settings */}
               <div className="space-y-3 p-3 rounded-xl bg-black/40 border border-white/5">

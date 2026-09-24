@@ -142,3 +142,36 @@ type CPGTypeRelationResult struct {
 	TargetNode CPGNode `json:"target_node"`
 	Relation   string  `json:"relation"`
 }
+
+// CPGCallFlowResult represents a multi-hop call chain.
+type CPGCallFlowResult struct {
+	Direction string    `json:"direction"` // "callers", "callees", "both"
+	Depth     int       `json:"depth"`
+	RootNode  CPGNode   `json:"root_node"`
+	Nodes     []CPGNode `json:"nodes"`
+	Edges     []CPGEdge `json:"edges"`
+	Paths     [][]int64 `json:"paths"`
+}
+
+// CPGImpactResult represents impact and blast-radius analysis for a node.
+type CPGImpactResult struct {
+	TargetNode        CPGNode   `json:"target_node"`
+	DirectCallers     []CPGNode `json:"direct_callers"`
+	IndirectCallers   []CPGNode `json:"indirect_callers"`
+	AffectedFiles     []string  `json:"affected_files"`
+	DirectCount       int       `json:"direct_count"`
+	IndirectCount     int       `json:"indirect_count"`
+	AffectedFileCount int       `json:"affected_file_count"`
+	Nodes             []CPGNode `json:"nodes"`
+	Edges             []CPGEdge `json:"edges"`
+}
+
+// CPGPathResult represents a path between two nodes in CPG.
+type CPGPathResult struct {
+	Found        bool      `json:"found"`
+	FromNode     CPGNode   `json:"from_node"`
+	ToNode       CPGNode   `json:"to_node"`
+	Relationship string    `json:"relationship,omitempty"`
+	Nodes        []CPGNode `json:"nodes"`
+	Edges        []CPGEdge `json:"edges"`
+}

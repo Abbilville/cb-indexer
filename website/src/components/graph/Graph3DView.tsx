@@ -76,6 +76,9 @@ export function Graph3DView({
   edgeOpacity = 0.75,
   nodeSize = 1.0,
   nodeOpacity = 1.0,
+  highlightedNodeIds,
+  highlightedEdgeIds,
+  neighborhoodDepth = 1,
 }: GraphRendererProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<ForceGraph3DInstance | null>(null);
@@ -89,29 +92,50 @@ export function Graph3DView({
   nodeSizeRef.current = nodeSize;
   nodeOpacityRef.current = nodeOpacity;
 
-  // Compute 1-hop neighborhood for selection focus
+  // Compute neighborhood / path for selection focus
   const { highlightNodes, highlightLinks } = useMemo(() => {
     const hNodes = new Set<string | number>();
     const hLinks = new Set<string | number>();
 
+    // 1. If explicit analysis path is active
+    if (highlightedNodeIds && highlightedNodeIds.size > 0) {
+      highlightedNodeIds.forEach((id) => hNodes.add(id));
+      if (highlightedEdgeIds) {
+        highlightedEdgeIds.forEach((id) => hLinks.add(id));
+      }
+      return { highlightNodes: hNodes, highlightLinks: hLinks };
+    }
+
+    // 2. Otherwise compute multi-hop neighborhood according to neighborhoodDepth
     if (selectedNode) {
       hNodes.add(selectedNode.id);
-      data.links.forEach((l) => {
-        const srcId = typeof l.source === 'object' && l.source !== null ? l.source.id : l.source;
-        const dstId = typeof l.target === 'object' && l.target !== null ? l.target.id : l.target;
+      let currentHop = new Set<string | number>([String(selectedNode.id)]);
+      const depth = Math.max(1, Math.min(neighborhoodDepth || 1, 3));
 
-        if (String(srcId) === String(selectedNode.id)) {
-          hNodes.add(dstId);
-          hLinks.add(l.id);
-        } else if (String(dstId) === String(selectedNode.id)) {
-          hNodes.add(srcId);
-          hLinks.add(l.id);
-        }
-      });
+      for (let hop = 0; hop < depth; hop++) {
+        const nextHop = new Set<string | number>();
+        data.links.forEach((l) => {
+          const rawSrc = typeof l.source === 'object' && l.source !== null ? l.source.id : l.source;
+          const rawDst = typeof l.target === 'object' && l.target !== null ? l.target.id : l.target;
+          const srcId = String(rawSrc);
+          const dstId = String(rawDst);
+
+          if (currentHop.has(srcId)) {
+            hNodes.add(rawDst);
+            hLinks.add(l.id);
+            nextHop.add(dstId);
+          } else if (currentHop.has(dstId)) {
+            hNodes.add(rawSrc);
+            hLinks.add(l.id);
+            nextHop.add(srcId);
+          }
+        });
+        currentHop = nextHop;
+      }
     }
 
     return { highlightNodes: hNodes, highlightLinks: hLinks };
-  }, [selectedNode, data.links]);
+  }, [selectedNode, data.links, highlightedNodeIds, highlightedEdgeIds, neighborhoodDepth]);
 
   // Refs for current state to decouple click selection from data re-simulation
   const selectedNodeRef = useRef<GraphNode | null>(selectedNode);
@@ -225,7 +249,7 @@ export function Graph3DView({
         // Link Colors: Highlight connected links with original color, subtle dimming for others
         .linkColor((link: unknown) => {
           const l = link as GraphEdge;
-          const hasSelection = !!selectedNodeRef.current;
+          const hasSelection = !!selectedNodeRef.current || highlightLinksRef.current.size > 0;
           const isHighlighted = highlightLinksRef.current.has(l.id);
           const isSelectedEdge = selectedEdgeRef.current && String(selectedEdgeRef.current.id) === String(l.id);
 
@@ -233,6 +257,31 @@ export function Graph3DView({
           if (hasSelection) {
             return isHighlighted ? getEdgeColor(l.type) : 'rgba(255, 255, 255, 0.08)';
           }
+          return getEdgeColor(l.type);
+        })
+        .linkWidth((link: unknown) => {
+          const l = link as GraphEdge;
+          const currentBase = edgeThicknessRef.current || 1;
+          const hasSelection = !!selectedNodeRef.current || highlightLinksRef.current.size > 0;
+          const isHighlighted = highlightLinksRef.current.has(l.id);
+          const isSelectedEdge = selectedEdgeRef.current && String(selectedEdgeRef.current.id) === String(l.id);
+          if (isSelectedEdge) return currentBase * 2.2;
+          if (hasSelection) {
+            return isHighlighted ? currentBase * 2.5 : Math.max(currentBase * 0.35, 0.3);
+          }
+          return currentBase;
+        })
+        .linkDirectionalParticles((link: unknown) => {
+          const l = link as GraphEdge;
+          return highlightLinksRef.current.has(l.id) ? 3 : 0;
+        })
+        .linkDirectionalParticleSpeed(0.008)
+        .linkDirectionalParticleWidth((link: unknown) => {
+          const l = link as GraphEdge;
+          return highlightLinksRef.current.has(l.id) ? 2.5 : 0;
+        })
+        .linkDirectionalParticleColor((link: unknown) => {
+          const l = link as GraphEdge;
           return getEdgeColor(l.type);
         })
         .linkWidth((link: unknown) => {

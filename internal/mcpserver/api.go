@@ -1322,6 +1322,70 @@ if ($p) { [Console]::Out.Write($p) }
 				return
 			}
 			writeJSON(w, http.StatusOK, map[string]any{"query": queryType, "source": source, "sink": sink, "results": res})
+		case "call_flow", "callflow":
+			dir := r.URL.Query().Get("direction")
+			depthStr := r.URL.Query().Get("depth")
+			depth := 3
+			if d, err := strconv.Atoi(depthStr); err == nil && d > 0 {
+				depth = d
+			}
+			res, err := cpg.GetCPGCallFlow(dbPath, symbol, dir, depth)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, res)
+		case "taint_flow", "taintflow":
+			source := r.URL.Query().Get("source")
+			if source == "" {
+				source = symbol
+			}
+			sink := r.URL.Query().Get("sink")
+			res, err := cpg.GetCPGTaintFlow(dbPath, source, sink)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, res)
+		case "impact", "blast_radius":
+			res, err := cpg.GetCPGImpact(dbPath, symbol)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, res)
+		case "find_path", "path":
+			from := r.URL.Query().Get("from")
+			if from == "" {
+				from = symbol
+			}
+			to := r.URL.Query().Get("to")
+			rel := r.URL.Query().Get("rel")
+			res, err := cpg.FindCPGPath(dbPath, from, to, rel)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, res)
+		case "neighborhood":
+			nodeIDStr := r.URL.Query().Get("node_id")
+			var nodeID int64
+			if id, err := strconv.ParseInt(nodeIDStr, 10, 64); err == nil {
+				nodeID = id
+			}
+			depthStr := r.URL.Query().Get("depth")
+			depth := 1
+			if d, err := strconv.Atoi(depthStr); err == nil && d > 0 {
+				depth = d
+			}
+			inbound := r.URL.Query().Get("inbound") != "false"
+			outbound := r.URL.Query().Get("outbound") != "false"
+			res, err := cpg.GetCPGNeighborhood(dbPath, nodeID, depth, inbound, outbound)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, res)
 		case "types", "type_relations":
 			res, err := cpg.GetCPGTypeRelations(dbPath, symbol)
 			if err != nil {
@@ -1330,7 +1394,7 @@ if ($p) { [Console]::Out.Write($p) }
 			}
 			writeJSON(w, http.StatusOK, map[string]any{"query": queryType, "symbol": symbol, "results": res})
 		default:
-			writeError(w, http.StatusBadRequest, "Invalid query type. Supported: callers, callees, references, cfg, data_flow, types")
+			writeError(w, http.StatusBadRequest, "Invalid query type. Supported: callers, callees, references, cfg, data_flow, call_flow, taint_flow, impact, find_path, neighborhood, types")
 		}
 	})
 

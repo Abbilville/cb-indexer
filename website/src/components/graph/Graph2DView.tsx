@@ -19,34 +19,58 @@ export function Graph2DView({
   edgeOpacity = 0.75,
   nodeSize = 1.0,
   nodeOpacity = 1.0,
+  highlightedNodeIds,
+  highlightedEdgeIds,
+  neighborhoodDepth = 1,
 }: GraphRendererProps) {
   type ForceGraphInstance = InstanceType<typeof ForceGraph>;
   const graphRef = useRef<ForceGraphInstance | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Compute 1-hop neighborhood for selection focus
+  // Compute neighborhood / path for selection focus
   const { highlightNodes, highlightLinks } = useMemo(() => {
     const hNodes = new Set<string | number>();
     const hLinks = new Set<string | number>();
 
+    // 1. If explicit analysis path is active
+    if (highlightedNodeIds && highlightedNodeIds.size > 0) {
+      highlightedNodeIds.forEach((id) => hNodes.add(id));
+      if (highlightedEdgeIds) {
+        highlightedEdgeIds.forEach((id) => hLinks.add(id));
+      }
+      return { highlightNodes: hNodes, highlightLinks: hLinks };
+    }
+
+    // 2. Multi-hop neighborhood expansion according to neighborhoodDepth
     if (selectedNode) {
       hNodes.add(selectedNode.id);
-      data.links.forEach((l) => {
-        const srcId = typeof l.source === 'object' && l.source !== null ? l.source.id : l.source;
-        const dstId = typeof l.target === 'object' && l.target !== null ? l.target.id : l.target;
+      let currentHop = new Set<string | number>([String(selectedNode.id)]);
+      const depth = Math.max(1, Math.min(neighborhoodDepth || 1, 3));
 
-        if (String(srcId) === String(selectedNode.id)) {
-          hNodes.add(dstId);
-          hLinks.add(l.id);
-        } else if (String(dstId) === String(selectedNode.id)) {
-          hNodes.add(srcId);
-          hLinks.add(l.id);
-        }
-      });
+      for (let hop = 0; hop < depth; hop++) {
+        const nextHop = new Set<string | number>();
+        data.links.forEach((l) => {
+          const rawSrc = typeof l.source === 'object' && l.source !== null ? l.source.id : l.source;
+          const rawDst = typeof l.target === 'object' && l.target !== null ? l.target.id : l.target;
+          const srcId = String(rawSrc);
+          const dstId = String(rawDst);
+
+          if (currentHop.has(srcId)) {
+            hNodes.add(rawDst);
+            hLinks.add(l.id);
+            nextHop.add(dstId);
+          } else if (currentHop.has(dstId)) {
+            hNodes.add(rawSrc);
+            hLinks.add(l.id);
+            nextHop.add(srcId);
+          }
+        });
+        currentHop = nextHop;
+      }
     }
 
     return { highlightNodes: hNodes, highlightLinks: hLinks };
-  }, [selectedNode, data.links]);
+  }, [selectedNode, data.links, highlightedNodeIds, highlightedEdgeIds, neighborhoodDepth]);
 
   // Keep refs for current state without restarting force simulation
   const selectedNodeRef = useRef<GraphNode | null>(selectedNode);
@@ -195,7 +219,7 @@ export function Graph2DView({
         // Link Colors: Keep original edge color when focused, dim outside edges heavily
         .linkColor((link: unknown) => {
           const l = link as GraphEdge;
-          const hasSelection = !!selectedNodeRef.current;
+          const hasSelection = !!selectedNodeRef.current || highlightLinksRef.current.size > 0;
           const isHighlighted = highlightLinksRef.current.has(l.id);
           const isSelectedEdge = selectedEdgeRef.current && String(selectedEdgeRef.current.id) === String(l.id);
 
@@ -208,20 +232,31 @@ export function Graph2DView({
           }
           return hexToRgba(getEdgeColor(l.type), currentEdgeOpacity);
         })
-        // Edge Thickness: focused edges are bold, outside edges are thinner
         .linkWidth((link: unknown) => {
           const l = link as GraphEdge;
           const currentBase = edgeThicknessRef.current || 1;
-          const hasSelection = !!selectedNodeRef.current;
+          const hasSelection = !!selectedNodeRef.current || highlightLinksRef.current.size > 0;
           const isHighlighted = highlightLinksRef.current.has(l.id);
           const isSelectedEdge = selectedEdgeRef.current && String(selectedEdgeRef.current.id) === String(l.id);
           if (isSelectedEdge) return currentBase * 2.2;
           if (hasSelection) {
-            return isHighlighted ? currentBase * 2.2 : Math.max(currentBase * 0.35, 0.4);
+            return isHighlighted ? currentBase * 2.5 : Math.max(currentBase * 0.35, 0.4);
           }
           return currentBase;
         })
-        // Proportional directional arrows: prominent on focus edges, hidden on outside edges
+        .linkDirectionalParticles((link: unknown) => {
+          const l = link as GraphEdge;
+          return highlightLinksRef.current.has(l.id) ? 3 : 0;
+        })
+        .linkDirectionalParticleSpeed(0.008)
+        .linkDirectionalParticleWidth((link: unknown) => {
+          const l = link as GraphEdge;
+          return highlightLinksRef.current.has(l.id) ? 2.5 : 0;
+        })
+        .linkDirectionalParticleColor((link: unknown) => {
+          const l = link as GraphEdge;
+          return getEdgeColor(l.type);
+        })
         .linkDirectionalArrowLength((link: unknown) => {
           const l = link as GraphEdge;
           const currentBase = edgeThicknessRef.current || 1;

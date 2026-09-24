@@ -4,7 +4,7 @@ import {
   StatusResponse,
   CodeContextResponse,
 } from '../types/project';
-import { GraphPayload } from '../types/graph';
+import { GraphPayload, CallFlowResult, ImpactResult, PathResult, FlowResult } from '../types/graph';
 
 const AUTH_STORAGE_KEY = 'CB_INDEXER_AUTH_TOKEN';
 const LEGACY_AUTH_STORAGE_KEY = 'OSS_INDEXER_AUTH_TOKEN';
@@ -195,6 +195,82 @@ export class ApiService {
     if (params.source) searchParams.set('source', params.source);
     if (params.sink) searchParams.set('sink', params.sink);
     return this.request<Record<string, unknown>>(`/api/cpg/query?${searchParams.toString()}`);
+  }
+
+  public static async getCallFlow(params: {
+    repo: string;
+    symbol: string;
+    direction?: 'callers' | 'callees' | 'both';
+    depth?: number;
+  }): Promise<CallFlowResult> {
+    const searchParams = new URLSearchParams({
+      repo: params.repo,
+      type: 'call_flow',
+      symbol: params.symbol,
+      direction: params.direction || 'both',
+      depth: (params.depth || 3).toString(),
+    });
+    return this.request<CallFlowResult>(`/api/cpg/query?${searchParams.toString()}`);
+  }
+
+  public static async getTaintFlow(params: {
+    repo: string;
+    source: string;
+    sink: string;
+  }): Promise<FlowResult> {
+    const searchParams = new URLSearchParams({
+      repo: params.repo,
+      type: 'taint_flow',
+      source: params.source,
+      sink: params.sink,
+    });
+    return this.request<FlowResult>(`/api/cpg/query?${searchParams.toString()}`);
+  }
+
+  public static async getImpactAnalysis(params: {
+    repo: string;
+    symbol: string;
+  }): Promise<ImpactResult> {
+    const searchParams = new URLSearchParams({
+      repo: params.repo,
+      type: 'impact',
+      symbol: params.symbol,
+    });
+    return this.request<ImpactResult>(`/api/cpg/query?${searchParams.toString()}`);
+  }
+
+  public static async findPath(params: {
+    repo: string;
+    from: string;
+    to: string;
+    rel?: string;
+  }): Promise<PathResult> {
+    const searchParams = new URLSearchParams({
+      repo: params.repo,
+      type: 'find_path',
+      from: params.from,
+      to: params.to,
+    });
+    if (params.rel) searchParams.set('rel', params.rel);
+    return this.request<PathResult>(`/api/cpg/query?${searchParams.toString()}`);
+  }
+
+  public static async getNeighborhood(params: {
+    repo: string;
+    nodeId: string | number;
+    depth?: number;
+    inbound?: boolean;
+    outbound?: boolean;
+  }): Promise<GraphPayload> {
+    const searchParams = new URLSearchParams({
+      repo: params.repo,
+      type: 'neighborhood',
+      node_id: params.nodeId.toString(),
+      depth: (params.depth || 1).toString(),
+      inbound: (params.inbound !== false).toString(),
+      outbound: (params.outbound !== false).toString(),
+    });
+    return this.request<GraphPayload>(`/api/cpg/query?${searchParams.toString()}`);
   }
 
   public static async triggerReindex(params: {

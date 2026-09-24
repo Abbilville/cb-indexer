@@ -13,4 +13,7 @@ export interface GraphRendererProps {
   edgeOpacity?: number;
   nodeSize?: number;
   nodeOpacity?: number;
+  highlightedNodeIds?: Set<string | number>;
+  highlightedEdgeIds?: Set<string | number>;
+  neighborhoodDepth?: number;
 }
