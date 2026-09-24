@@ -9,7 +9,7 @@ import { FloatingControls, AstViewMode } from '../../components/ast/FloatingCont
 import { FloatingLegend } from '../../components/ast/FloatingLegend';
 import { NodeInspector } from '../../components/graph/NodeInspector';
 import { EdgeInspector } from '../../components/graph/EdgeInspector';
-import { RepoDetail } from '../../types/project';
+import { RepoDetail, ProjectCatalogItem } from '../../types/project';
 import { ApiService } from '../../services/api';
 import {
   GraphPayload,
@@ -53,6 +53,7 @@ function AstExplorerContent() {
   const { showToast } = useToast();
 
 
+  const [projects, setProjects] = useState<ProjectCatalogItem[]>([]);
   const [currentProjectId, setCurrentProjectId] = useState('');
   const [repos, setRepos] = useState<RepoDetail[]>([]);
   const [selectedRepo, setSelectedRepo] = useState('');
@@ -151,7 +152,7 @@ function AstExplorerContent() {
       action: 'callers' | 'callees' | 'data_flow' | 'control_flow' | 'impact' | 'find_path',
       targetNode: GraphNode
     ) => {
-      const repoTarget = selectedRepo || targetNode.project || currentProjectId;
+      const repoTarget = targetNode.project || selectedRepo || currentProjectId;
       if (!repoTarget) return;
 
       try {
@@ -161,6 +162,7 @@ function AstExplorerContent() {
           setCallFlowDirection(dir);
           const res = await ApiService.getCallFlow({
             repo: repoTarget,
+            project: currentProjectId,
             symbol: targetNode.name,
             direction: dir,
             depth: callFlowDepth,
@@ -200,9 +202,9 @@ function AstExplorerContent() {
           setAnalysisMode('impact');
           const res = await ApiService.getImpactAnalysis({
             repo: repoTarget,
+            project: currentProjectId,
             symbol: targetNode.name,
           });
-          setImpactResult(res);
           showToast(`Impact analysis: ${res.direct_count + res.indirect_count} dependents found`, 'info');
         } else if (action === 'find_path') {
           setAnalysisMode('find_path');
@@ -223,10 +225,10 @@ function AstExplorerContent() {
     try {
       const res = await ApiService.getTaintFlow({
         repo: repoTarget,
+        project: currentProjectId,
         source: taintSource.trim(),
         sink: taintSink.trim(),
       });
-      setFlowResult(res);
       showToast(`Taint path traced: ${res.steps.length} step(s)`, 'info');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to trace taint flow';
@@ -240,11 +242,11 @@ function AstExplorerContent() {
     try {
       const res = await ApiService.findPath({
         repo: repoTarget,
+        project: currentProjectId,
         from: pathFrom.trim(),
         to: pathTo.trim(),
         rel: pathRel,
       });
-      setPathResult(res);
       if (res.found) {
         showToast(`Path found with ${res.nodes.length} nodes!`, 'success');
       } else {
@@ -259,17 +261,43 @@ function AstExplorerContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Load project list & overview repos
+  // Load project list & overview repos with persistent project selection
   const loadInitialData = useCallback(async () => {
     try {
       setIsLoading(true);
       const projData = await ApiService.getProjects();
       const list = projData.registered_projects || [];
-
+      setProjects(list);
 
       if (list.length > 0) {
-        const pId = list[0].project_id || list[0].registry_path || '';
+        // Read project from URL query param
+        let urlProject = '';
+        if (typeof window !== 'undefined') {
+          const params = new URLSearchParams(window.location.search);
+          urlProject = params.get('project') || '';
+        }
+        // Read project from localStorage
+        const savedProject = (typeof window !== 'undefined' && localStorage.getItem('CB_INDEXER_CURRENT_PROJECT')) || '';
+        const targetPreferred = urlProject || savedProject;
+        const matched =
+          (targetPreferred &&
+            list.find(
+              (p) =>
+                (p.project_id && p.project_id.toLowerCase() === targetPreferred.toLowerCase()) ||
+                (p.name && p.name.toLowerCase() === targetPreferred.toLowerCase()) ||
+                (p.registry_path && p.registry_path.toLowerCase() === targetPreferred.toLowerCase())
+            )) ||
+          list[0];
+
+        const pId = matched.project_id || matched.registry_path || '';
         setCurrentProjectId(pId);
+        if (typeof window !== 'undefined' && pId) {
+          localStorage.setItem('CB_INDEXER_CURRENT_PROJECT', pId);
+          const currentUrl = new URL(window.location.href);
+          currentUrl.searchParams.set('project', pId);
+          window.history.replaceState({}, '', currentUrl.toString());
+        }
+
         const overview = await ApiService.getOverview(pId);
         setRepos(overview.repos || []);
       }
@@ -280,6 +308,7 @@ function AstExplorerContent() {
       setIsLoading(false);
     }
   }, [showToast]);
+
 
   // Load graph payload from /api/graph (AST or CPG)
   const loadGraph = useCallback(
@@ -302,6 +331,38 @@ function AstExplorerContent() {
       }
     },
     [showToast]
+  );
+
+  const handleSwitchProject = useCallback(
+    async (newProjectId: string) => {
+      if (!newProjectId || newProjectId === currentProjectId) return;
+      setCurrentProjectId(newProjectId);
+      setSelectedRepo('');
+      setSelectedNode(null);
+      setSelectedEdge(null);
+      setCallFlowResult(null);
+      setFlowResult(null);
+      setImpactResult(null);
+      setPathResult(null);
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('CB_INDEXER_CURRENT_PROJECT', newProjectId);
+        const currentUrl = new URL(window.location.href);
+        currentUrl.searchParams.set('project', newProjectId);
+        window.history.replaceState({}, '', currentUrl.toString());
+      }
+
+      try {
+        const overview = await ApiService.getOverview(newProjectId);
+        setRepos(overview.repos || []);
+        await loadGraph(newProjectId, '', graphScope);
+        showToast(`Switched to project '${newProjectId}'`, 'info');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Failed to switch project';
+        showToast(msg, 'error');
+      }
+    },
+    [currentProjectId, graphScope, loadGraph, showToast]
   );
 
   useEffect(() => {
@@ -368,7 +429,7 @@ function AstExplorerContent() {
       <header className="flex items-center justify-between px-4 py-2.5 bg-gray-950/90 border-b border-white/10 z-30 shrink-0">
         <div className="flex items-center gap-3">
           <Link
-            href="/"
+            href={`/?project=${encodeURIComponent(currentProjectId)}`}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-medium text-gray-300 hover:text-white transition-all active:scale-95"
             title="Return to Main Dashboard"
           >
@@ -424,10 +485,35 @@ function AstExplorerContent() {
         <div className="flex items-center gap-3">
           {/* Active project & graph stats */}
           <div className="hidden sm:flex items-center gap-2 text-xs font-mono">
-            <span className="px-2.5 py-1 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-300 flex items-center gap-1.5">
-              <Database className="w-3 h-3 text-blue-400" />
-              <span>{selectedRepo || currentProjectId || 'Global'}</span>
-            </span>
+            {/* Interactive Project Switcher in /graph */}
+            {projects.length > 1 ? (
+              <div className="relative">
+                <select
+                  value={currentProjectId}
+                  onChange={(e) => handleSwitchProject(e.target.value)}
+                  className="appearance-none pl-7 pr-6 py-1 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-300 text-xs font-mono font-medium focus:outline-none focus:border-blue-400 cursor-pointer max-w-[190px] truncate"
+                  title="Switch Active Project"
+                >
+                  {projects.map((p) => {
+                    const pId = p.project_id || p.registry_path || '';
+                    return (
+                      <option key={pId} value={pId} className="bg-gray-900 text-white font-mono">
+                        {p.name || pId} ({p.total_repos ?? 0} repos)
+                      </option>
+                    );
+                  })}
+                </select>
+                <Database className="w-3 h-3 text-blue-400 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-blue-400 text-[9px] pointer-events-none">
+                  ▼
+                </span>
+              </div>
+            ) : (
+              <span className="px-2.5 py-1 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-300 flex items-center gap-1.5">
+                <Database className="w-3 h-3 text-blue-400" />
+                <span>{selectedRepo || currentProjectId || 'Global'}</span>
+              </span>
+            )}
 
             {graphData && (
               <span className="text-gray-400 text-[11px]">

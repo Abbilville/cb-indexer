@@ -47,21 +47,26 @@ function DashboardContent() {
 
         if (list.length > 0) {
           const defaultId = list[0].project_id || list[0].registry_path || '';
+          const savedId = (typeof window !== 'undefined' && localStorage.getItem('CB_INDEXER_CURRENT_PROJECT')) || '';
+          const targetPreferred = preferredId || savedId;
           const matchedPreferred =
-            preferredId &&
+            targetPreferred &&
             list.find(
               (p) =>
-                (p.project_id && p.project_id.toLowerCase() === preferredId.toLowerCase()) ||
-                (p.registry_path && p.registry_path.toLowerCase() === preferredId.toLowerCase())
+                (p.project_id && p.project_id.toLowerCase() === targetPreferred.toLowerCase()) ||
+                (p.registry_path && p.registry_path.toLowerCase() === targetPreferred.toLowerCase())
             );
           const nextId =
             matchedPreferred
-              ? matchedPreferred.project_id || matchedPreferred.registry_path || preferredId
+              ? matchedPreferred.project_id || matchedPreferred.registry_path || targetPreferred
               : currentProjectId && list.some((p) => (p.project_id || p.registry_path) === currentProjectId)
               ? currentProjectId
               : defaultId;
 
           setCurrentProjectId(nextId);
+          if (typeof window !== 'undefined' && nextId) {
+            localStorage.setItem('CB_INDEXER_CURRENT_PROJECT', nextId);
+          }
         } else {
           setCurrentProjectId('');
           setOverview(null);

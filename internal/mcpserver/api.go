@@ -1262,25 +1262,75 @@ if ($p) { [Console]::Out.Write($p) }
 			return
 		}
 		repo := r.URL.Query().Get("repo")
+		projectParam := r.URL.Query().Get("project")
 		if repo == "" {
-			repo = r.URL.Query().Get("project")
-		}
-		if repo == "" {
-			writeError(w, http.StatusBadRequest, "Missing 'repo' or 'project' parameter")
-			return
-		}
-		dbPath, err := cpg.FindCPGDB(repo)
-		if err != nil {
-			writeError(w, http.StatusNotFound, "CPG database not found: "+err.Error())
-			return
+			repo = projectParam
 		}
 
 		queryType := r.URL.Query().Get("type")
-		symbol := r.URL.Query().Get("symbol")
+		symbol := strings.TrimSpace(r.URL.Query().Get("symbol"))
 		if symbol == "" {
-			symbol = r.URL.Query().Get("target")
+			symbol = strings.TrimSpace(r.URL.Query().Get("target"))
+		}
+		if symbol == "" {
+			symbol = strings.TrimSpace(r.URL.Query().Get("from"))
 		}
 
+		// Multi-tier database resolution
+		var dbPath string
+		if repo != "" {
+			dbPath, _ = cpg.FindCPGDB(repo)
+		}
+
+		// Tier 2: Check project registry if repo was a project ID or if symbol exists in one of the project's repos
+		lookupProject := projectParam
+		if lookupProject == "" {
+			lookupProject = repo
+		}
+		if dbPath == "" && lookupProject != "" {
+			if reg, regErr := registry.LoadRegistry(lookupProject); regErr == nil {
+				for _, r := range reg.Repos {
+					if p, pErr := cpg.FindCPGDB(r.Name); pErr == nil {
+						if symbol != "" {
+							db, oErr := cpg.OpenCPGDB(p, true)
+							if oErr == nil {
+								var count int
+								_ = db.QueryRow("SELECT COUNT(*) FROM nodes WHERE name = ? OR qualified_name LIKE ?", symbol, "%"+symbol+"%").Scan(&count)
+								db.Close()
+								if count > 0 {
+									dbPath = p
+									break
+								}
+							}
+						} else if dbPath == "" {
+							dbPath = p
+						}
+					}
+				}
+			}
+		}
+
+		// Tier 3: Scan all cached CPG DBs to find matching symbol
+		if dbPath == "" && symbol != "" {
+			allDBs := cpg.ScanGlobalCPGCache()
+			for _, item := range allDBs {
+				db, oErr := cpg.OpenCPGDB(item.DBPath, true)
+				if oErr == nil {
+					var count int
+					_ = db.QueryRow("SELECT COUNT(*) FROM nodes WHERE name = ? OR qualified_name LIKE ?", symbol, "%"+symbol+"%").Scan(&count)
+					db.Close()
+					if count > 0 {
+						dbPath = item.DBPath
+						break
+					}
+				}
+			}
+		}
+
+		if dbPath == "" {
+			writeError(w, http.StatusNotFound, "CPG database not found for '"+repo+"'. Please ensure repository is indexed in CPG.")
+			return
+		}
 		switch strings.ToLower(queryType) {
 		case "callers":
 			res, err := cpg.GetCPGCallers(dbPath, symbol)

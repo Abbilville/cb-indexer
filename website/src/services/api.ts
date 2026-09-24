@@ -199,6 +199,7 @@ export class ApiService {
 
   public static async getCallFlow(params: {
     repo: string;
+    project?: string;
     symbol: string;
     direction?: 'callers' | 'callees' | 'both';
     depth?: number;
@@ -210,11 +211,13 @@ export class ApiService {
       direction: params.direction || 'both',
       depth: (params.depth || 3).toString(),
     });
+    if (params.project) searchParams.set('project', params.project);
     return this.request<CallFlowResult>(`/api/cpg/query?${searchParams.toString()}`);
   }
 
   public static async getTaintFlow(params: {
     repo: string;
+    project?: string;
     source: string;
     sink: string;
   }): Promise<FlowResult> {
@@ -224,11 +227,13 @@ export class ApiService {
       source: params.source,
       sink: params.sink,
     });
+    if (params.project) searchParams.set('project', params.project);
     return this.request<FlowResult>(`/api/cpg/query?${searchParams.toString()}`);
   }
 
   public static async getImpactAnalysis(params: {
     repo: string;
+    project?: string;
     symbol: string;
   }): Promise<ImpactResult> {
     const searchParams = new URLSearchParams({
@@ -236,11 +241,13 @@ export class ApiService {
       type: 'impact',
       symbol: params.symbol,
     });
+    if (params.project) searchParams.set('project', params.project);
     return this.request<ImpactResult>(`/api/cpg/query?${searchParams.toString()}`);
   }
 
   public static async findPath(params: {
     repo: string;
+    project?: string;
     from: string;
     to: string;
     rel?: string;
@@ -251,6 +258,7 @@ export class ApiService {
       from: params.from,
       to: params.to,
     });
+    if (params.project) searchParams.set('project', params.project);
     if (params.rel) searchParams.set('rel', params.rel);
     return this.request<PathResult>(`/api/cpg/query?${searchParams.toString()}`);
   }

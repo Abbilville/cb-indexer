@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   GraphNode,
   GraphEdge,
@@ -67,8 +67,66 @@ export function NodeInspector({
 }: NodeInspectorProps) {
   const { showToast } = useToast();
   const [snippet, setSnippet] = useState<string | null>(null);
+  const [snippetStartLine, setSnippetStartLine] = useState<number>(1);
   const [isLoadingSnippet, setIsLoadingSnippet] = useState(false);
   const [activeConnTab, setActiveConnTab] = useState<'inbound' | 'outbound'>('inbound');
+
+  // Map line numbers to graph nodes in this file for clickable line navigation
+  const nodesByLine = useMemo(() => {
+    const map = new Map<number, GraphNode[]>();
+    if (!node?.file_path || !nodes) return map;
+    const targetFile = node.file_path.toLowerCase();
+    nodes.forEach((n) => {
+      if (n.file_path && n.file_path.toLowerCase() === targetFile && n.start_line) {
+        const list = map.get(n.start_line) || [];
+        list.push(n);
+        map.set(n.start_line, list);
+      }
+    });
+    return map;
+  }, [node?.file_path, nodes]);
+
+  // Automatically fetch code context whenever the selected node changes
+  useEffect(() => {
+    if (!node?.file_path) {
+      setSnippet(null);
+      return;
+    }
+
+    let isCancelled = false;
+    const fetchSnippet = async () => {
+      try {
+        setIsLoadingSnippet(true);
+        const start = Math.max(1, (node.start_line || 1) - 4);
+        const end = Math.max(start + 12, (node.end_line || node.start_line || 1) + 6);
+        const res = await ApiService.getCodeContext({
+          project: projectId,
+          repo: node.project || projectId,
+          file: node.file_path as string,
+          start,
+          end,
+          padding: 0,
+        });
+        if (!isCancelled) {
+          setSnippet(res.context.snippet);
+          setSnippetStartLine(res.context.start_line || start);
+        }
+      } catch {
+        if (!isCancelled) {
+          setSnippet(null);
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingSnippet(false);
+        }
+      }
+    };
+
+    fetchSnippet();
+    return () => {
+      isCancelled = true;
+    };
+  }, [node?.id, node?.file_path, node?.start_line, node?.end_line, node?.project, projectId]);
 
   // Fast lookup map for resolving neighbor nodes from link IDs
   const nodeMap = useMemo(() => {
@@ -263,21 +321,79 @@ export function NodeInspector({
           </div>
         )}
 
-        {/* Code Snippet Box */}
+        {/* Interactive Line-Clickable Code Viewer */}
         {snippet && (
-          <div className="rounded-xl bg-black/80 border border-blue-500/30 overflow-hidden animate-in fade-in">
+          <div className="rounded-xl bg-black/90 border border-blue-500/30 overflow-hidden animate-in fade-in">
             <div className="flex items-center justify-between px-2.5 py-1.5 bg-blue-950/40 border-b border-blue-500/20 text-[10px] text-blue-300 font-mono">
-              <span>Source Preview</span>
+              <span className="flex items-center gap-1.5">
+                <FileCode className="w-3 h-3 text-blue-400" />
+                <span>Code Viewer (Click line to focus node)</span>
+              </span>
               <button
                 onClick={() => setSnippet(null)}
                 className="text-gray-400 hover:text-white"
+                title="Collapse Preview"
               >
                 <X className="w-3 h-3" />
               </button>
             </div>
-            <pre className="p-2.5 text-[10px] font-mono text-gray-200 overflow-x-auto max-h-44 leading-relaxed">
-              {snippet}
-            </pre>
+            <div className="overflow-x-auto max-h-56 font-mono text-[11px] select-text">
+              {snippet.split('\n').map((lineText, idx) => {
+                const currentLineNum = snippetStartLine + idx;
+                const isSelectedLine =
+                  currentLineNum >= (node.start_line || 1) &&
+                  currentLineNum <= (node.end_line || node.start_line || 1);
+                const lineNodes = nodesByLine.get(currentLineNum) || [];
+                const hasNode = lineNodes.length > 0;
+
+                return (
+                  <div
+                    key={`line-${currentLineNum}`}
+                    onClick={() => {
+                      if (hasNode && onSelectNode) {
+                        onSelectNode(lineNodes[0]);
+                        showToast(`Focused ${lineNodes[0].label}: ${lineNodes[0].name} (line ${currentLineNum})`, 'info');
+                      }
+                    }}
+                    className={`flex items-stretch group transition-colors ${
+                      hasNode ? 'cursor-pointer hover:bg-blue-500/15' : ''
+                    } ${
+                      isSelectedLine
+                        ? 'bg-blue-600/25 border-l-2 border-cyan-400 text-white font-medium'
+                        : 'text-gray-300'
+                    }`}
+                    title={hasNode ? `Line ${currentLineNum}: ${lineNodes.map(n => `${n.label} '${n.name}'`).join(', ')} (Click to focus)` : `Line ${currentLineNum}`}
+                  >
+                    {/* Line number column */}
+                    <div
+                      className={`w-10 shrink-0 select-none text-right pr-2 py-0.5 border-r border-white/5 text-[10px] ${
+                        isSelectedLine
+                          ? 'text-cyan-300 font-bold bg-blue-500/10'
+                          : 'text-gray-600 group-hover:text-gray-400'
+                      }`}
+                    >
+                      {currentLineNum}
+                    </div>
+
+                    {/* Node indicator badge if a CPG node starts on this line */}
+                    {hasNode && (
+                      <div className="w-2.5 shrink-0 flex items-center justify-center pl-0.5">
+                        <span
+                          className="w-1.5 h-1.5 rounded-full"
+                          style={{ backgroundColor: getNodeColor(lineNodes[0].label) }}
+                          title={`${lineNodes[0].label}: ${lineNodes[0].name}`}
+                        />
+                      </div>
+                    )}
+
+                    {/* Line code text */}
+                    <pre className="flex-1 pl-2 pr-3 py-0.5 whitespace-pre overflow-visible text-[11px] leading-relaxed">
+                      {lineText || ' '}
+                    </pre>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 

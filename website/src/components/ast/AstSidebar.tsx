@@ -20,8 +20,83 @@ import {
   Play,
   Route,
   Compass,
+  Info,
 } from 'lucide-react';
 
+
+const ANALYSIS_MODE_INFO: Record<AnalysisMode, { title: string; summary: string; desc: string; steps: string[] }> = {
+  explore: {
+    title: 'Explore (Standard Graph)',
+    summary: 'Click nodes to inspect neighbors & attributes',
+    desc: 'Interactive 3D graph exploration of code entities and direct relationships.',
+    steps: [
+      'Click any node to focus on its neighborhood.',
+      'Use Neighborhood Scope below to set 1-3 hops.',
+      'Filter relationships (CALL, REF, TYPE) using the checkboxes.',
+    ],
+  },
+  call_flow: {
+    title: 'Call Flow Analysis',
+    summary: 'Traces method invocation chains',
+    desc: 'Traces multi-hop caller and callee hierarchies through method invocations.',
+    steps: [
+      'Click any method or function node in the graph.',
+      'Choose Direction: Callers, Callees, or Both.',
+      'Adjust Call Depth (1-5) to inspect deeper hops.',
+      'The invocation path is emphasized with animated directional particles.',
+    ],
+  },
+  data_flow: {
+    title: 'Data Flow Tracing',
+    summary: 'Tracks variable propagation into calls',
+    desc: 'Tracks how values, parameters, and variables propagate into downstream calls.',
+    steps: [
+      'Select a variable or parameter node in the graph.',
+      'Click "Trace Data" in Quick Actions.',
+      'Reaching definitions and flow paths will be highlighted.',
+    ],
+  },
+  taint_flow: {
+    title: 'Taint Flow Analysis',
+    summary: 'Traces untrusted input to execution sinks',
+    desc: 'Traces data propagation from external source inputs to critical execution sinks.',
+    steps: [
+      'Enter an untrusted Source symbol (e.g. req.body, amount, id).',
+      'Enter a sensitive Sink function (e.g. query, exec, chargeCard).',
+      'Click "Trace Taint Path" to compute and highlight the route.',
+    ],
+  },
+  control_flow: {
+    title: 'Control Flow (CFG)',
+    summary: 'Visualizes branches and execution steps',
+    desc: 'Visualizes statement execution order and branch decisions within a single method.',
+    steps: [
+      'Select a method or function in the graph.',
+      'Click "Control Flow" in Quick Actions.',
+      'CFG sequential edges and branch transitions will be highlighted.',
+    ],
+  },
+  impact: {
+    title: 'Impact Analysis (Blast Radius)',
+    summary: 'Calculates affected dependents and files',
+    desc: 'Calculates all direct & indirect dependents and affected source files if this node changes.',
+    steps: [
+      'Select any method, class, or service component.',
+      'Click "Analyze Impact" in Quick Actions.',
+      'Inspect direct callers, transitive callers, and affected files list.',
+    ],
+  },
+  find_path: {
+    title: 'Find Path',
+    summary: 'Finds shortest relationship path between nodes',
+    desc: 'Finds the shortest semantic relationship path connecting any two nodes.',
+    steps: [
+      'Enter Starting symbol in "From" and Destination in "To".',
+      'Select relationship constraint (Calls, CFG, Data Flow, or All).',
+      'Click "Find Shortest Path" to compute and highlight the bridge.',
+    ],
+  },
+};
 interface AstSidebarProps {
   data: GraphPayload | null;
   repos: RepoDetail[];
@@ -134,6 +209,9 @@ export function AstSidebar({
   onClearAnalysisPath,
 }: AstSidebarProps) {
   const [activeTab, setActiveTab] = useState<'ask' | 'filters' | 'tree'>('filters');
+  const [showModeInfo, setShowModeInfo] = useState(false);
+  const currentMode = analysisMode || 'explore';
+  const modeInfo = ANALYSIS_MODE_INFO[currentMode] || ANALYSIS_MODE_INFO.explore;
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   const availableLabels = data?.available_labels || [];
@@ -336,10 +414,21 @@ export function AstSidebar({
                 <div className="space-y-3 p-3 rounded-xl bg-black/40 border border-cyan-500/20 animate-in fade-in">
                   {/* Analysis Mode Header */}
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <Compass className="w-3.5 h-3.5 text-cyan-400" />
-                      Analysis Mode
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1">
+                        <Compass className="w-3.5 h-3.5 text-cyan-400" />
+                        Analysis Mode
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowModeInfo(!showModeInfo)}
+                        onMouseEnter={() => setShowModeInfo(true)}
+                        className="text-gray-500 hover:text-cyan-300 p-0.5 rounded transition-colors"
+                        title="Click to view mode details and how-to instructions"
+                      >
+                        <Info className="w-3.5 h-3.5 text-cyan-400" />
+                      </button>
+                    </div>
                     {hasActiveAnalysisPath && (
                       <button
                         type="button"
@@ -371,6 +460,50 @@ export function AstSidebar({
                     </span>
                   </div>
 
+                  {/* 1-Line Mode Summary & Guide Toggle */}
+                  <div className="flex items-center justify-between text-[10px] text-gray-500 px-0.5">
+                    <span className="truncate pr-1">{modeInfo.summary}</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowModeInfo(!showModeInfo)}
+                      className="text-cyan-400/90 hover:text-cyan-300 hover:underline shrink-0 inline-flex items-center gap-0.5 font-medium"
+                    >
+                      <span>{showModeInfo ? 'hide guide' : 'how to use'}</span>
+                    </button>
+                  </div>
+
+                  {/* Detailed Analysis Mode Info Card */}
+                  {showModeInfo && (
+                    <div className="p-3 rounded-xl bg-cyan-950/40 border border-cyan-500/30 text-xs text-gray-200 space-y-2 animate-in fade-in">
+                      <div className="flex items-start justify-between gap-1">
+                        <span className="font-bold text-cyan-300 text-[11px] flex items-center gap-1">
+                          <Info className="w-3 h-3 text-cyan-400" />
+                          {modeInfo.title}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowModeInfo(false)}
+                          className="text-gray-400 hover:text-white"
+                          title="Close Guide"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-gray-300 leading-relaxed">
+                        {modeInfo.desc}
+                      </p>
+                      <div className="space-y-1 pt-1.5 border-t border-cyan-500/20">
+                        <span className="text-[10px] font-semibold uppercase text-cyan-400 tracking-wider block">
+                          How to do it:
+                        </span>
+                        <ol className="space-y-1 text-[10px] text-gray-300 list-decimal list-inside leading-normal">
+                          {modeInfo.steps.map((st, i) => (
+                            <li key={i}>{st}</li>
+                          ))}
+                        </ol>
+                      </div>
+                    </div>
+                  )}
                   {/* Neighborhood Controls (Explore & standard view) */}
                   {analysisMode === 'explore' && (
                     <div className="pt-2 border-t border-white/5 space-y-2">
