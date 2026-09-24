@@ -1,4 +1,4 @@
-export type GraphScope = 'topology' | 'ast';
+export type GraphScope = 'topology' | 'ast' | 'cpg';
 export type ViewMode = '2d' | '3d' | 'whiteboard';
 
 export interface GraphNode {

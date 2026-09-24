@@ -150,7 +150,7 @@ export function NodeInspector({
       {/* Header */}
       <div className="flex items-start justify-between gap-2 pb-3 border-b border-white/10 shrink-0">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span
               className="w-2.5 h-2.5 rounded-full shrink-0"
               style={{ backgroundColor: color }}
@@ -158,6 +158,16 @@ export function NodeInspector({
             <span className="text-[10px] uppercase font-mono tracking-wider px-2 py-0.5 rounded bg-white/10 text-gray-200">
               {node.label}
             </span>
+            {Boolean(node.properties?.ast_correlated) && (
+              <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30" title="Correlated with Tree-sitter AST Node">
+                AST #{String(node.properties?.ast_node_id)}
+              </span>
+            )}
+            {Boolean(node.properties?.language) && (
+              <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20">
+                {String(node.properties?.language)}
+              </span>
+            )}
             <span className="text-[10px] text-gray-500 font-mono">#{node.id}</span>
           </div>
 
@@ -198,6 +208,7 @@ export function NodeInspector({
               <span className="font-mono text-[11px] text-gray-300 truncate" title={node.file_path}>
                 {node.file_path}
                 {node.start_line ? `:${node.start_line}` : ''}
+                {Boolean(node.properties?.column) ? `:${String(node.properties?.column)}` : ''}
               </span>
               <button
                 onClick={handleFetchSnippet}
@@ -212,6 +223,18 @@ export function NodeInspector({
                 <span>Code</span>
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Method / Function Signature */}
+        {Boolean(node.properties?.signature) && (
+          <div>
+            <span className="text-[10px] text-gray-500 font-semibold uppercase tracking-wider block mb-0.5">
+              Signature
+            </span>
+            <span className="font-mono text-cyan-300 text-[11px] break-all bg-black/40 px-2.5 py-1 rounded-xl block border border-cyan-500/20">
+              {String(node.properties?.signature)}
+            </span>
           </div>
         )}
 

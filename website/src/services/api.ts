@@ -179,6 +179,24 @@ export class ApiService {
     );
   }
 
+  public static async getCPGStatus(): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>('/api/cpg/status');
+  }
+
+  public static async queryCPG(params: {
+    repo: string;
+    type: 'callers' | 'callees' | 'references' | 'cfg' | 'data_flow' | 'types';
+    symbol?: string;
+    source?: string;
+    sink?: string;
+  }): Promise<Record<string, unknown>> {
+    const searchParams = new URLSearchParams({ repo: params.repo, type: params.type });
+    if (params.symbol) searchParams.set('symbol', params.symbol);
+    if (params.source) searchParams.set('source', params.source);
+    if (params.sink) searchParams.set('sink', params.sink);
+    return this.request<Record<string, unknown>>(`/api/cpg/query?${searchParams.toString()}`);
+  }
+
   public static async triggerReindex(params: {
     project?: string;
     repoName?: string;

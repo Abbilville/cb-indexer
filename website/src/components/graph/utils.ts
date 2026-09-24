@@ -8,23 +8,29 @@ export const LABEL_COLORS: Record<string, string> = {
   branch: '#6366f1',      // Indigo
   folder: '#4f46e5',      // Indigo
   class: '#a855f7',       // Purple
+  typedecl: '#a855f7',    // Purple
   interface: '#9333ea',   // Purple
   enum: '#c084fc',        // Purple
   function: '#06b6d4',    // Cyan
   method: '#0891b2',      // Cyan
+  call: '#38bdf8',        // Sky Blue
+  param: '#f97316',       // Orange
   route: '#10b981',       // Emerald
   file: '#f59e0b',        // Amber
   variable: '#ec4899',    // Pink
   field: '#f43f5e',       // Rose
+  import: '#a855f7',      // Purple
   decorator: '#8b5cf6',   // Violet
   default: '#94a3b8',     // Slate
 };
 
 export const EDGE_COLORS: Record<string, string> = {
   calls: '#06b6d4',
+  call: '#06b6d4',
   call_reference: '#0891b2',
   api_call: '#06b6d4',
   imports: '#a855f7',
+  import: '#a855f7',
   defines: '#60a5fa',
   defines_method: '#38bdf8',
   gateway_route: '#60a5fa',
@@ -32,6 +38,12 @@ export const EDGE_COLORS: Record<string, string> = {
   http_calls: '#10b981',
   inherits: '#f59e0b',
   implements: '#f59e0b',
+  type: '#f59e0b',
+  cfg: '#eab308',           // Amber/Yellow for Control-Flow
+  data_flow: '#ec4899',     // Pink for Data-Flow
+  ref: '#8b5cf6',           // Violet for References
+  ast: '#60a5fa',           // Blue for Syntax Structure
+  contains: '#64748b',
   contains_file: '#64748b',
   contains_folder: '#475569',
   has_branch: '#334155',

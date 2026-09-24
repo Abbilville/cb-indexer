@@ -12,7 +12,7 @@ import { EdgeInspector } from '../../components/graph/EdgeInspector';
 import { RepoDetail } from '../../types/project';
 import { ApiService } from '../../services/api';
 import { GraphPayload, GraphNode, GraphEdge } from '../../types/graph';
-import { ArrowLeft, RefreshCw, Loader2, Database } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Loader2, Database, Network, GitBranch } from 'lucide-react';
 
 const Graph2DView = dynamic(
   () => import('../../components/graph/Graph2DView').then((mod) => mod.Graph2DView),
@@ -47,6 +47,7 @@ function AstExplorerContent() {
   const [currentProjectId, setCurrentProjectId] = useState('');
   const [repos, setRepos] = useState<RepoDetail[]>([]);
   const [selectedRepo, setSelectedRepo] = useState('');
+  const [graphScope, setGraphScope] = useState<'ast' | 'cpg'>('ast');
   const [graphData, setGraphData] = useState<GraphPayload | null>(null);
   const [viewMode, setViewMode] = useState<AstViewMode>('3d');
   const [showLegend, setShowLegend] = useState(false);
@@ -89,21 +90,21 @@ function AstExplorerContent() {
     }
   }, [showToast]);
 
-  // Load AST graph payload from /api/graph
-  const loadAstGraph = useCallback(
-    async (projectId: string, repoTarget?: string) => {
+  // Load graph payload from /api/graph (AST or CPG)
+  const loadGraph = useCallback(
+    async (projectId: string, repoTarget?: string, scope: 'ast' | 'cpg' = 'ast') => {
       if (!projectId) return;
       try {
         setIsLoading(true);
         const payload = await ApiService.getGraph({
           project: projectId,
           repo: repoTarget || undefined,
-          scope: 'ast',
+          scope: scope,
           limit: 350,
         });
         setGraphData(payload);
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Failed to fetch AST graph';
+        const msg = err instanceof Error ? err.message : `Failed to fetch ${scope.toUpperCase()} graph`;
         showToast(msg, 'error');
       } finally {
         setIsLoading(false);
@@ -118,15 +119,15 @@ function AstExplorerContent() {
 
   useEffect(() => {
     if (currentProjectId) {
-      loadAstGraph(currentProjectId, selectedRepo);
+      loadGraph(currentProjectId, selectedRepo, graphScope);
     }
-  }, [currentProjectId, selectedRepo, loadAstGraph]);
+  }, [currentProjectId, selectedRepo, graphScope, loadGraph]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await loadAstGraph(currentProjectId, selectedRepo);
+    await loadGraph(currentProjectId, selectedRepo, graphScope);
     setIsRefreshing(false);
-    showToast('Knowledge graph refreshed', 'info');
+    showToast(`${graphScope === 'cpg' ? 'CPG' : 'AST'} knowledge graph refreshed`, 'info');
   };
 
   // Label filter toggle
@@ -185,15 +186,64 @@ function AstExplorerContent() {
           </Link>
 
           <div className="h-4 w-[1px] bg-white/10" />
-
           <div className="flex items-center gap-2">
             <h1 className="text-sm font-bold tracking-tight text-white flex items-center gap-2">
-              <span>AST Knowledge Graph Explorer</span>
-              <span className="text-[10px] uppercase font-mono px-1.5 py-0.2 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20">
-                Code Intelligence
+              <span>{graphScope === 'cpg' ? 'Code Property Graph (CPG) Explorer' : 'AST Knowledge Graph Explorer'}</span>
+              <span
+                className={`text-[10px] uppercase font-mono px-1.5 py-0.2 rounded border ${
+                  graphScope === 'cpg'
+                    ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20'
+                    : 'bg-purple-500/10 text-purple-300 border-purple-500/20'
+                }`}
+              >
+                {graphScope === 'cpg' ? 'Joern CPG' : 'Code Intelligence'}
               </span>
             </h1>
           </div>
+        </div>
+
+        {/* Graph Type Switcher: AST vs CPG */}
+        <div className="flex items-center p-0.5 rounded-xl bg-white/5 border border-white/10 text-xs font-mono">
+          <button
+            onClick={() => {
+              if (graphScope !== 'ast') {
+                setGraphScope('ast');
+                setSelectedNode(null);
+                setSelectedEdge(null);
+                setSelectedLabels([]);
+                setSelectedEdgeTypes([]);
+              }
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-medium transition-all ${
+              graphScope === 'ast'
+                ? 'bg-purple-600/30 text-purple-200 border border-purple-500/40 shadow-sm'
+                : 'text-gray-400 hover:text-white'
+            }`}
+            title="Tree-sitter Abstract Syntax Tree (AST)"
+          >
+            <GitBranch className="w-3.5 h-3.5" />
+            <span>AST</span>
+          </button>
+          <button
+            onClick={() => {
+              if (graphScope !== 'cpg') {
+                setGraphScope('cpg');
+                setSelectedNode(null);
+                setSelectedEdge(null);
+                setSelectedLabels([]);
+                setSelectedEdgeTypes([]);
+              }
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-medium transition-all ${
+              graphScope === 'cpg'
+                ? 'bg-cyan-600/30 text-cyan-200 border border-cyan-500/40 shadow-sm'
+                : 'text-gray-400 hover:text-white'
+            }`}
+            title="Joern Code Property Graph (CPG)"
+          >
+            <Network className="w-3.5 h-3.5" />
+            <span>CPG</span>
+          </button>
         </div>
 
         <div className="flex items-center gap-3">
@@ -262,14 +312,18 @@ function AstExplorerContent() {
         <main className="flex-1 relative h-full w-full overflow-hidden bg-black/40">
           {isLoading ? (
             <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-xs text-gray-400">
-              <Loader2 className="w-7 h-7 animate-spin text-purple-400" />
-              <span>Loading AST Knowledge Graph...</span>
+              <Loader2 className={`w-7 h-7 animate-spin ${graphScope === 'cpg' ? 'text-cyan-400' : 'text-purple-400'}`} />
+              <span>Loading {graphScope === 'cpg' ? 'Joern Code Property Graph (CPG)...' : 'AST Knowledge Graph...'}</span>
             </div>
           ) : !graphData || graphData.nodes.length === 0 ? (
             <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-xs text-gray-400 p-6 text-center">
-              <p className="font-semibold text-gray-300">No AST Knowledge Graph Found</p>
+              <p className="font-semibold text-gray-300">
+                {graphScope === 'cpg' ? 'No Code Property Graph Found' : 'No AST Knowledge Graph Found'}
+              </p>
               <p className="text-[11px] text-gray-500 max-w-sm">
-                Make sure the repository has been indexed via <code className="text-gray-300">codebase-memory-mcp</code>.
+                {graphScope === 'cpg'
+                  ? 'Trigger CPG indexing via the dashboard or CLI `cb-indexer index -engine cpg` to generate CPG graphs.'
+                  : 'Make sure the repository has been indexed via codebase-memory-mcp.'}
               </p>
             </div>
           ) : (
