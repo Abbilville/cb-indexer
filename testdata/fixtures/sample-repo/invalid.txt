@@ -1,0 +1,1 @@
+This is plain text and should be safely ignored by code property graph extractors.

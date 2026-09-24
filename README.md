@@ -84,7 +84,10 @@ When developers work with **AI coding assistants** (like Cursor, Claude Desktop,
   ```bash
   npm install -g codebase-memory-mcp
   ```
-
+- **Joern (Optional, for Code Property Graph indexing)**:
+  - Download pre-built CLI from [Joern GitHub Releases](https://github.com/joernio/joern/releases) (extract `joern-cli` and add to system `PATH`).
+  - Or run via Docker: `docker pull joernio/joern`
+  - Requires Java (JDK >= 11).
 ---
 
 ### 2. Installation
@@ -189,7 +192,7 @@ In your workspace or global settings `mcp_config.json`:
 
 ## 🛠️ MCP Tools Reference & AI Prompt Examples
 
-Once connected, your AI assistant can call any of the following 11 tools autonomously:
+Once connected, your AI assistant can call any of the following 13 tools autonomously:
 
 | MCP Tool | Access | Key Parameters | Description |
 | :--- | :---: | :--- | :--- |
@@ -200,7 +203,9 @@ Once connected, your AI assistant can call any of the following 11 tools autonom
 | `get_symbol_context` | `Read` | `repo_name`, `file_path`, `start_line?` | Retrieves source code snippet slices around symbol line ranges. |
 | `list_projects` | `Read` | `project?` | Lists all registered projects in the catalog and active AST graph databases. |
 | `check_project_status` | `Read` | `project?` | Freshness report detailing manifest integrity and per-repo index staleness. |
-| `trigger_index` | `Write` | `project?`, `repo_name?`, `pull?` | Triggers immediate AST indexing (with optional `git pull`) for a whole project or one service. |
+| `check_cpg_status` | `Read` | *none* | Reports Joern engine reachability, version, cache location, and CPG statistics. |
+| `query_cpg` | `Read` | `repo_name`, `query_type`, `symbol?` | Queries CPG relationships: `callers`, `callees`, `references`, `cfg`, `data_flow`, `types`, or `graph`. |
+| `trigger_index` | `Write` | `project?`, `repo_name?`, `engine?`, `pull?` | Triggers immediate batch or repo indexing (`ast`, `cpg`, or `both`) with optional git pull. |
 | `scan_and_create_registry` | `Write` | `workspace_path`, `output_file?` | Discovers microservices in a folder and saves declarative `registry.yaml`. |
 | `onboard_workspace` | `Write` | `workspace_path`, `project_id?` | Atomic pipeline: scan directory $\rightarrow$ register project $\rightarrow$ batch index into AST. |
 | `remove_project` | `Write` | `project`, `purge_graphs?` | Decommissions a project from the catalog and cleans up cache graph files. |
@@ -278,6 +283,107 @@ Navigate to **[http://localhost:43770/graph/](http://localhost:43770/graph/)** (
 * **Display & Visual Settings**:
   * Real-time sliders in the sidebar for **Edge Thickness** (1px–6px), **Edge Opacity** (10%–100%), **Node Size** (0.6x–2.5x), and **Node Opacity** (20%–100%).
 ---
+
+## 🔬 Joern Code Property Graph (CPG) Indexing
+
+`cb-indexer` integrates **Joern** as a dedicated Code Property Graph (CPG) analysis engine, coexisting seamlessly with the Tree-sitter Abstract Syntax Tree (AST) indexer.
+
+### 1. Conceptual Architecture
+
+```text
+Repository Source Code
+         │
+         ├── Tree-sitter / Codebase Memory MCP
+         │       └── AST (Files, Classes, Functions, Routes)
+         │       └── SQLite Cache (~/.cache/codebase-memory-mcp/<repo>.db)
+         │
+         └── Joern Engine
+                 └── CPG (Call Graphs, CFG Control Flow, Data Flow, Type Relations)
+                 └── Local Normalized SQLite Cache (~/.cache/cb-indexer/cpg/<repo>.db)
+                         │
+                         ▼
+               Correlated Knowledge Graph (correlated via ast_node_id)
+```
+
+### 2. Supported Languages
+* **Go** (`.go`)
+* **Java** (`.java`)
+* **Python** (`.py`)
+* **JavaScript & TypeScript** (`.js`, `.ts`, `.jsx`, `.tsx`)
+* **C / C++** (`.c`, `.cpp`, `.h`)
+* **Kotlin** (`.kt`), **PHP** (`.php`), **C#** (`.cs`)
+
+### 3. Installing & Running Joern
+1. **Download CLI**: Download the latest release from [Joern GitHub Releases](https://github.com/joernio/joern/releases) (e.g. `joern-cli-windows-x86_64.zip` or `joern-cli.zip`).
+2. **Extract & Add to PATH**: Extract to your preferred location (e.g. `C:\Tools\joern` or `/usr/local/joern`) and add the folder containing `joern-parse` to your system `PATH`.
+3. **Docker Alternative**: Run via Docker container `docker pull joernio/joern`.
+4. **Verify Reachability**: Run `cb-indexer cpg status`.
+
+### 4. Configuration & Environment Variables
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `CB_INDEXER_CPG_CACHE_DIR` | `~/.cache/cb-indexer/cpg` (or `%LOCALAPPDATA%\cb-indexer\cpg`) | Path to local CPG SQLite cache databases. |
+| `JOERN_PARSE_PATH` | *(empty)* | Optional explicit path to `joern-parse` binary or batch script. |
+| `JOERN_PATH` | *(empty)* | Optional explicit path to `joern` binary or batch script. |
+| `JOERN_HOME` | *(empty)* | Optional Joern installation root directory. |
+
+### 5. Triggering CPG Indexing
+* **CLI Batch Indexing**:
+  ```bash
+  # Index both AST and CPG (default)
+  cb-indexer index -engine both
+
+  # Index only CPG
+  cb-indexer index -engine cpg
+  ```
+* **CLI Single Repository Indexing**:
+  ```bash
+  cb-indexer cpg index /path/to/my-service --name my-service
+  ```
+* **REST API**:
+  ```bash
+  curl -X POST http://localhost:43770/api/trigger \
+    -H "Content-Type: application/json" \
+    -d '{"project": "bank-microservices", "engine": "both"}'
+  ```
+* **MCP Tool**:
+  Call `trigger_index(project="bank-microservices", engine="both")`.
+
+### 6. Querying CPG
+* **CLI Queries**:
+  ```bash
+  # Inspect Joern reachability & indexed database stats
+  cb-indexer cpg status
+
+  # Query function callers
+  cb-indexer cpg query account-service callers ProcessPayment
+
+  # Query function callees
+  cb-indexer cpg query account-service callees ProcessPayment
+
+  # Query symbol references
+  cb-indexer cpg query account-service references orderID
+
+  # Trace Control Flow Graph (CFG) steps
+  cb-indexer cpg query account-service cfg ProcessPayment
+
+  # Trace Data Flow steps
+  cb-indexer cpg query account-service dataflow orderID
+
+  # Query type relationships
+  cb-indexer cpg query account-service types OrderService
+  ```
+* **REST API**:
+  * `GET /api/graph?scope=cpg&project=bank-microservices`: Returns normalized CPG nodes & links for graph visualization.
+  * `GET /api/cpg/query?repo=account-service&type=callers&symbol=ProcessPayment`: Queries relationship links.
+  * `GET /api/cpg/status`: Returns engine availability and cache stats.
+* **MCP Tools**:
+  * `query_cpg(repo_name="account-service", query_type="callers", symbol="ProcessPayment")`
+  * `check_cpg_status()`
+
+### 7. Limitations & Fallback
+* Joern requires Java (JDK 11 or higher) installed on the system.
+* For environments without Joern installed or during CI workflows, `cb-indexer` provides a deterministic native static code analyzer and diagnostic guidance via `cb-indexer cpg status`.
 
 ## 🔐 Authentication & Security
 

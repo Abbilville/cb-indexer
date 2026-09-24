@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"cb-indexer/internal/cbmwrite"
+	"cb-indexer/internal/cpg"
 	"cb-indexer/internal/gitwatcher"
 	"cb-indexer/internal/graphmeta"
 	"cb-indexer/internal/mcpserver"
@@ -106,7 +107,8 @@ Usage:
 Commands:
   daemon      Start background indexing daemon & HTTP MCP server
   scan        Scan workspace directory and generate registry.yaml
-  index       Batch index repositories into codebase-memory-mcp
+  index       Batch index repositories (AST, CPG, or both)
+  cpg         Manage Joern Code Property Graph indexing & queries
   onboard     Atomic scan + registry write + batch index
   remove      Decommission project and purge knowledge graphs
   status      Show indexing status, daemon health, and logs
@@ -223,6 +225,7 @@ func main() {
 		regPath := fs.String("r", "", "Path to custom registry.yaml")
 		project := fs.String("p", "", "Project ID from catalog")
 		mode := fs.String("m", "moderate", "Indexing mode: moderate, full, fast")
+		engine := fs.String("engine", "both", "Indexing engine: ast, cpg, both")
 		pull := fs.Bool("pull", false, "Git pull repos before indexing")
 		persistence := fs.Bool("persistence", false, "Write .codebase-memory/ artifacts in repos")
 		fs.Parse(os.Args[2:])
@@ -245,26 +248,63 @@ func main() {
 			}
 		}
 
-		fmt.Printf("[INFO] Starting batch indexing for %s (%d repos, mode: %s)...\n", reg.Name, len(reg.Repos), *mode)
-		report := cbmwrite.BatchIndexProject(ctx, reg, *mode, *persistence)
-		fmt.Println("\n================ INDEXING REPORT ================")
-		fmt.Printf("Project:     %s (%s)\n", report.ProjectName, report.ProjectID)
-		fmt.Printf("Total Repos: %d\n", report.TotalRepos)
-		fmt.Printf("Successful:  %d\n", report.Successful)
-		fmt.Printf("Failed:      %d\n", report.Failed)
-		fmt.Println("-------------------------------------------------")
-		for _, r := range report.Results {
-			icon := "✓"
-			if r.Status != "success" {
-				icon = "✗"
+		eng := strings.ToLower(strings.TrimSpace(*engine))
+		if eng != "cpg" {
+			fmt.Printf("[INFO] Starting AST batch indexing for %s (%d repos, mode: %s)...\n", reg.Name, len(reg.Repos), *mode)
+			report := cbmwrite.BatchIndexProject(ctx, reg, *mode, *persistence)
+			fmt.Println("\n================ AST INDEXING REPORT ================")
+			fmt.Printf("Project:     %s (%s)\n", report.ProjectName, report.ProjectID)
+			fmt.Printf("Total Repos: %d\n", report.TotalRepos)
+			fmt.Printf("Successful:  %d\n", report.Successful)
+			fmt.Printf("Failed:      %d\n", report.Failed)
+			fmt.Println("-----------------------------------------------------")
+			for _, r := range report.Results {
+				icon := "✓"
+				if r.Status != "success" {
+					icon = "✗"
+				}
+				fmt.Printf(" %s %-25s [%s]\n", icon, r.Name, r.Status)
+				if r.Error != "" {
+					fmt.Printf("   Error: %s\n", r.Error)
+				}
 			}
-			fmt.Printf(" %s %-25s [%s]\n", icon, r.Name, r.Status)
-			if r.Error != "" {
-				fmt.Printf("   Error: %s\n", r.Error)
+			fmt.Println("=====================================================")
+		}
+
+		if eng == "cpg" || eng == "both" {
+			fmt.Printf("\n[INFO] Starting CPG batch indexing for %s (%d repos)...\n", reg.Name, len(reg.Repos))
+			cpgReport := cpg.BatchIndexProjects(ctx, reg, true, nil)
+			fmt.Println("\n================ CPG INDEXING REPORT ================")
+			fmt.Printf("Project:     %s (%s)\n", cpgReport.ProjectName, cpgReport.ProjectID)
+			fmt.Printf("Total Repos: %d\n", cpgReport.TotalRepos)
+			fmt.Printf("Successful:  %d\n", cpgReport.Successful)
+			fmt.Printf("Total Nodes: %d\n", cpgReport.TotalNodes)
+			fmt.Printf("Total Edges: %d\n", cpgReport.TotalEdges)
+			fmt.Println("-----------------------------------------------------")
+			for _, r := range cpgReport.Results {
+				icon := "✓"
+				if r.Status != "success" {
+					icon = "✗"
+				}
+				fmt.Printf(" %s %-25s [%s] (%d nodes, %d edges)\n", icon, r.Name, r.Status, r.Nodes, r.Edges)
+				if r.Error != "" {
+					fmt.Printf("   Error: %s\n", r.Error)
+				}
+			}
+			fmt.Println("=====================================================")
+
+			// Correlate AST and CPG
+			for _, r := range reg.Repos {
+				if astDb, err := graphmeta.FindCbmDB(r.Name); err == nil {
+					if cpgDb, err := cpg.FindCPGDB(r.Name); err == nil {
+						corr, _ := cpg.CorrelateCPGDatabase(cpgDb, astDb)
+						if corr > 0 {
+							fmt.Printf("[INFO] Correlated %d entities in '%s' between AST and CPG\n", corr, r.Name)
+						}
+					}
+				}
 			}
 		}
-		fmt.Println("=================================================")
-
 	case "onboard":
 		fs := flag.NewFlagSet("onboard", flag.ExitOnError)
 		projectID := fs.String("p", "", "Custom project ID")
@@ -352,6 +392,143 @@ func main() {
 			}
 		}
 		fmt.Println()
+
+	case "cpg":
+		if len(os.Args) < 3 {
+			fmt.Println("Usage: cb-indexer cpg <status|index|query> [args...]")
+			os.Exit(1)
+		}
+		subCmd := os.Args[2]
+		switch subCmd {
+		case "status":
+			status := cpg.CheckJoernStatus()
+			fmt.Println("\n=== Joern CPG Engine Status ===")
+			fmt.Printf("Available:       %v\n", status.Available)
+			fmt.Printf("Engine:          %s\n", status.Engine)
+			fmt.Printf("Binary Path:     %s\n", status.BinaryPath)
+			fmt.Printf("Version:         %s\n", status.Version)
+			fmt.Printf("Cache Dir:       %s\n", status.CacheDir)
+			fmt.Printf("Indexed Repos:   %d\n", status.IndexedRepos)
+			fmt.Printf("Total Nodes:     %d\n", status.TotalNodes)
+			fmt.Printf("Total Edges:     %d\n", status.TotalEdges)
+			if status.Help != "" {
+				fmt.Printf("\n[NOTE] %s\n", status.Help)
+			}
+			fmt.Println()
+
+		case "index":
+			fs := flag.NewFlagSet("cpg index", flag.ExitOnError)
+			name := fs.String("name", "", "Repository name")
+			fs.Parse(os.Args[3:])
+			if fs.NArg() == 0 {
+				fmt.Println("Usage: cb-indexer cpg index <repo_path> [--name <name>]")
+				os.Exit(1)
+			}
+			targetPath := fs.Arg(0)
+			repoName := *name
+			if repoName == "" {
+				repoName = filepath.Base(targetPath)
+			}
+			res := cpg.IndexSingleRepo(ctx, targetPath, repoName, true)
+			if res.Status == "success" {
+				fmt.Printf("[SUCCESS] Indexed '%s' into CPG: %d nodes, %d edges (%dms)\n", res.Name, res.Nodes, res.Edges, res.DurationMs)
+				if astDb, err := graphmeta.FindCbmDB(repoName); err == nil {
+					if cpgDb, err := cpg.FindCPGDB(repoName); err == nil {
+						corr, _ := cpg.CorrelateCPGDatabase(cpgDb, astDb)
+						if corr > 0 {
+							fmt.Printf("[INFO] Correlated %d entities with AST database\n", corr)
+						}
+					}
+				}
+			} else {
+				fmt.Fprintf(os.Stderr, "[ERROR] CPG indexing failed: %s\n", res.Error)
+				os.Exit(1)
+			}
+
+		case "query":
+			if len(os.Args) < 5 {
+				fmt.Println("Usage: cb-indexer cpg query <repo_name> <callers|callees|references|cfg|dataflow|types> <symbol>")
+				os.Exit(1)
+			}
+			repo := os.Args[3]
+			qType := strings.ToLower(os.Args[4])
+			symbol := os.Args[5]
+
+			dbPath, err := cpg.FindCPGDB(repo)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[ERROR] %v\n", err)
+				os.Exit(1)
+			}
+
+			switch qType {
+			case "callers":
+				callers, err := cpg.GetCPGCallers(dbPath, symbol)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "[ERROR] %v\n", err)
+					os.Exit(1)
+				}
+				fmt.Printf("Found %d callers for '%s':\n", len(callers), symbol)
+				for _, c := range callers {
+					fmt.Printf("  * %s (%s:%d)\n", c.CallerNode.Name, c.CallerNode.FilePath, c.CallerNode.StartLine)
+				}
+			case "callees":
+				callees, err := cpg.GetCPGCallees(dbPath, symbol)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "[ERROR] %v\n", err)
+					os.Exit(1)
+				}
+				fmt.Printf("Found %d callees invoked by '%s':\n", len(callees), symbol)
+				for _, c := range callees {
+					fmt.Printf("  * %s (%s:%d)\n", c.CalleeNode.Name, c.CalleeNode.FilePath, c.CalleeNode.StartLine)
+				}
+			case "references", "refs":
+				refs, err := cpg.GetCPGReferences(dbPath, symbol)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "[ERROR] %v\n", err)
+					os.Exit(1)
+				}
+				fmt.Printf("Found %d references to '%s':\n", len(refs), symbol)
+				for _, r := range refs {
+					fmt.Printf("  * %s (%s:%d)\n", r.SourceNode.Name, r.SourceNode.FilePath, r.SourceNode.StartLine)
+				}
+			case "cfg":
+				flow, err := cpg.GetCPGControlFlow(dbPath, symbol)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "[ERROR] %v\n", err)
+					os.Exit(1)
+				}
+				fmt.Printf("CFG steps for '%s' (%d steps):\n", symbol, len(flow.Steps))
+				for _, s := range flow.Steps {
+					fmt.Printf("  [%d] %s %s (line %d)\n", s.StepIndex, s.Node.Label, s.Node.Name, s.Node.StartLine)
+				}
+			case "dataflow", "data_flow":
+				flow, err := cpg.GetCPGDataFlow(dbPath, symbol, "")
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "[ERROR] %v\n", err)
+					os.Exit(1)
+				}
+				fmt.Printf("Data flow from '%s' (%d steps):\n", symbol, len(flow.Steps))
+				for _, s := range flow.Steps {
+					fmt.Printf("  [%d] %s %s (line %d)\n", s.StepIndex, s.Node.Label, s.Node.Name, s.Node.StartLine)
+				}
+			case "types":
+				types, err := cpg.GetCPGTypeRelations(dbPath, symbol)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "[ERROR] %v\n", err)
+					os.Exit(1)
+				}
+				fmt.Printf("Type relations for '%s' (%d relations):\n", symbol, len(types))
+				for _, t := range types {
+					fmt.Printf("  * %s --[%s]--> %s\n", t.TypeNode.Name, t.Relation, t.TargetNode.Name)
+				}
+			default:
+				fmt.Fprintf(os.Stderr, "Unknown query type '%s'. Supported: callers, callees, references, cfg, dataflow, types\n", qType)
+				os.Exit(1)
+			}
+		default:
+			fmt.Fprintf(os.Stderr, "Unknown cpg command '%s'. Supported: status, index, query\n", subCmd)
+			os.Exit(1)
+		}
 
 	case "run":
 		defaultPort := 43770

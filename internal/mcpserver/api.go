@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"cb-indexer/internal/cbmwrite"
+	"cb-indexer/internal/cpg"
 	"cb-indexer/internal/gitwatcher"
 	"cb-indexer/internal/graphmeta"
 	"cb-indexer/internal/registry"
@@ -179,12 +180,12 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 		indexingMutex.Lock()
 		indexingActive := isIndexing
 		indexingMutex.Unlock()
-
 		writeJSON(w, http.StatusOK, map[string]any{
 			"daemon":          daemonStatus,
 			"is_indexing":     indexingActive,
 			"server_time":     time.Now().Format(time.RFC3339),
 			"active_projects": daemonStatus.ActiveProjects,
+			"cpg":             cpg.CheckJoernStatus(),
 		})
 	})
 
@@ -204,6 +205,7 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 			RepoName    string `json:"repo_name"`
 			Repo        string `json:"repo"`
 			Mode        string `json:"mode"`
+			Engine      string `json:"engine"` // "ast", "cpg", or "both"
 			Pull        bool   `json:"pull"`
 			Persistence bool   `json:"persistence"`
 		}
@@ -290,24 +292,71 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 					})
 				}
 			}
-			res := cbmwrite.IndexSingleRepo(jobCtx, fullPath, repo.Name, mode, req.Persistence)
+			engine := strings.ToLower(strings.TrimSpace(req.Engine))
+			if engine == "" {
+				engine = "both"
+			}
+
+			var res cbmwrite.RepoIndexResult
+			if engine != "cpg" {
+				res = cbmwrite.IndexSingleRepo(jobCtx, fullPath, repo.Name, mode, req.Persistence)
+				durMs := time.Since(startTime).Milliseconds()
+				Broadcast(EventMessage{
+					Type:       "completed",
+					ProjectID:  reg.ProjectID,
+					RepoName:   repo.Name,
+					Current:    1,
+					Total:      1,
+					Status:     res.Status,
+					DurationMs: durMs,
+					Message:    fmt.Sprintf("AST Indexing '%s' %s in %dms", repo.Name, res.Status, durMs),
+				})
+			}
+
+			var cpgRes *cpg.CPGIndexResult
+			if engine == "cpg" || engine == "both" {
+				Broadcast(EventMessage{
+					Type:      "started",
+					ProjectID: reg.ProjectID,
+					RepoName:  repo.Name,
+					Current:   1,
+					Total:     1,
+					Status:    "indexing",
+					Message:   fmt.Sprintf("Indexing CPG for '%s'...", repo.Name),
+				})
+				r := cpg.IndexSingleRepo(jobCtx, fullPath, repo.Name, true)
+				cpgRes = &r
+
+				// Correlate with AST if available
+				if astDb, err := graphmeta.FindCbmDB(repo.Name); err == nil {
+					if cpgDb, err := cpg.FindCPGDB(repo.Name); err == nil {
+						_, _ = cpg.CorrelateCPGDatabase(cpgDb, astDb)
+					}
+				}
+
+				Broadcast(EventMessage{
+					Type:       "completed",
+					ProjectID:  reg.ProjectID,
+					RepoName:   repo.Name,
+					Current:    1,
+					Total:      1,
+					Status:     cpgRes.Status,
+					DurationMs: cpgRes.DurationMs,
+					Message:    fmt.Sprintf("CPG indexing '%s' %s (%d nodes, %d edges) in %dms", repo.Name, cpgRes.Status, cpgRes.Nodes, cpgRes.Edges, cpgRes.DurationMs),
+				})
+			}
+
 			durMs := time.Since(startTime).Milliseconds()
-
-			Broadcast(EventMessage{
-				Type:       "completed",
-				ProjectID:  reg.ProjectID,
-				RepoName:   repo.Name,
-				Current:    1,
-				Total:      1,
-				Status:     res.Status,
-				DurationMs: durMs,
-				Message:    fmt.Sprintf("Indexing '%s' %s in %dms", repo.Name, res.Status, durMs),
-			})
-
 			var errs []string
 			if res.Error != "" {
 				errs = append(errs, res.Error)
 			}
+			if cpgRes != nil && cpgRes.Error != "" {
+				errs = append(errs, "CPG: "+cpgRes.Error)
+			}
+			success := (engine == "cpg" && cpgRes != nil && cpgRes.Status == "success") ||
+				(engine != "cpg" && res.Status == "success")
+
 			gitwatcher.LogIndexRun(gitwatcher.IndexRunLog{
 				Timestamp:  time.Now(),
 				DurationMs: durMs,
@@ -315,15 +364,22 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 				TotalRepos: 1,
 				Indexed:    []string{repo.Name},
 				Errors:     errs,
-				Success:    res.Status == "success",
+				Success:    success,
 			})
 
-			writeJSON(w, http.StatusOK, map[string]any{
+			responsePayload := map[string]any{
 				"status":  "completed",
 				"type":    "single_repo",
-				"result":  res,
 				"project": reg.ProjectID,
-			})
+				"engine":  engine,
+			}
+			if res.Name != "" {
+				responsePayload["ast_result"] = res
+			}
+			if cpgRes != nil {
+				responsePayload["cpg_result"] = cpgRes
+			}
+			writeJSON(w, http.StatusOK, responsePayload)
 			return
 		}
 
@@ -369,28 +425,75 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 			}
 		}
 
-		report := cbmwrite.BatchIndexProjectWithProgress(jobCtx, reg, mode, req.Persistence, func(current, total int, repoName, status, errStr string, durMs int64) {
-			Broadcast(EventMessage{
-				Type:       "progress",
-				ProjectID:  reg.ProjectID,
-				RepoName:   repoName,
-				Current:    current,
-				Total:      total,
-				Status:     status,
-				DurationMs: durMs,
-				Message:    fmt.Sprintf("[%d/%d] %s: %s", current, total, repoName, status),
+		engine := strings.ToLower(strings.TrimSpace(req.Engine))
+		if engine == "" {
+			engine = "both"
+		}
+
+		var report *cbmwrite.BatchIndexReport
+		if engine != "cpg" {
+			r := cbmwrite.BatchIndexProjectWithProgress(jobCtx, reg, mode, req.Persistence, func(current, total int, repoName, status, errStr string, durMs int64) {
+				Broadcast(EventMessage{
+					Type:       "progress",
+					ProjectID:  reg.ProjectID,
+					RepoName:   repoName,
+					Current:    current,
+					Total:      total,
+					Status:     status,
+					DurationMs: durMs,
+					Message:    fmt.Sprintf("[%d/%d AST] %s: %s", current, total, repoName, status),
+				})
 			})
-		})
+			report = &r
+		}
+
+		var cpgReport *cpg.BatchIndexReport
+		if engine == "cpg" || engine == "both" {
+			r := cpg.BatchIndexProjects(jobCtx, reg, true, func(current, total int, repoName, status string, durMs int64) {
+				Broadcast(EventMessage{
+					Type:       "progress",
+					ProjectID:  reg.ProjectID,
+					RepoName:   repoName,
+					Current:    current,
+					Total:      total,
+					Status:     "cpg_" + status,
+					DurationMs: durMs,
+					Message:    fmt.Sprintf("[%d/%d CPG] %s: %s (%dms)", current, total, repoName, status, durMs),
+				})
+			})
+			cpgReport = &r
+
+			// Correlate AST and CPG databases for each repo
+			for _, r := range reg.Repos {
+				if astDb, err := graphmeta.FindCbmDB(r.Name); err == nil {
+					if cpgDb, err := cpg.FindCPGDB(r.Name); err == nil {
+						_, _ = cpg.CorrelateCPGDatabase(cpgDb, astDb)
+					}
+				}
+			}
+		}
 
 		totalDurMs := time.Since(startTime).Milliseconds()
-
 		var indexedList []string
 		var errorList []string
-		for _, r := range report.Results {
-			if r.Status == "success" {
-				indexedList = append(indexedList, r.Name)
-			} else if r.Error != "" {
-				errorList = append(errorList, fmt.Sprintf("%s: %s", r.Name, r.Error))
+		if report != nil {
+			for _, r := range report.Results {
+				if r.Status == "success" {
+					indexedList = append(indexedList, r.Name)
+				} else if r.Error != "" {
+					errorList = append(errorList, fmt.Sprintf("%s (AST): %s", r.Name, r.Error))
+				}
+			}
+		}
+		if cpgReport != nil {
+			for _, r := range cpgReport.Results {
+				if r.Status == "success" {
+					if report == nil {
+						indexedList = append(indexedList, r.Name)
+					}
+				} else if r.Error != "" {
+					errorList = append(errorList, fmt.Sprintf("%s (CPG): %s", r.Name, r.Error))
+				}
 			}
 		}
 
@@ -404,22 +507,38 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 			Success:    len(errorList) == 0,
 		})
 
+		completedCount := 0
+		if report != nil {
+			completedCount = report.Successful
+		} else if cpgReport != nil {
+			completedCount = cpgReport.Successful
+		}
+
 		Broadcast(EventMessage{
 			Type:       "completed",
 			ProjectID:  reg.ProjectID,
-			Current:    report.Successful,
+			Current:    completedCount,
 			Total:      len(reg.Repos),
 			Status:     "completed",
 			DurationMs: totalDurMs,
-			Message:    fmt.Sprintf("Completed batch index for %s: %d/%d successful in %dms", reg.Name, report.Successful, len(reg.Repos), totalDurMs),
+			Message:    fmt.Sprintf("Completed batch index for %s (%s): %d/%d in %dms", reg.Name, engine, completedCount, len(reg.Repos), totalDurMs),
 		})
 
-		writeJSON(w, http.StatusOK, map[string]any{
-			"status":  "completed",
-			"type":    "batch",
-			"report":  report,
-			"project": reg.ProjectID,
-		})
+		batchPayload := map[string]any{
+			"status":     "completed",
+			"type":       "batch",
+			"project":    reg.ProjectID,
+			"engine":     engine,
+			"duration":   totalDurMs,
+			"successful": completedCount,
+		}
+		if report != nil {
+			batchPayload["ast_report"] = report
+		}
+		if cpgReport != nil {
+			batchPayload["cpg_report"] = cpgReport
+		}
+		writeJSON(w, http.StatusOK, batchPayload)
 	})
 
 	// 5. POST /api/scan
@@ -966,7 +1085,7 @@ if ($p) { [Console]::Out.Write($p) }
 		}
 
 		// Topology scope:
-		if scope == "topology" || (repoParam == "" && scope != "ast") {
+		if scope == "topology" || (repoParam == "" && scope != "ast" && scope != "cpg") {
 			reg, err := registry.LoadRegistry(projectParam)
 			if err == nil {
 				status := graphmeta.CheckProjectStatus(reg)
@@ -976,6 +1095,45 @@ if ($p) { [Console]::Out.Write($p) }
 			}
 		}
 
+		// CPG Scope:
+		if scope == "cpg" {
+			if repoParam == "" || repoParam == "all" {
+				var repoNames []string
+				if reg, err := registry.LoadRegistry(projectParam); err == nil {
+					for _, r := range reg.Repos {
+						repoNames = append(repoNames, r.Name)
+					}
+				}
+
+				cpgItems := cpg.FindAllCPGDBs(projectParam, repoNames)
+				if len(cpgItems) > 0 {
+					payload, err := cpg.QueryMultiCPGGraph(cpgItems, limit, labels, edgeTypes, query)
+					if err == nil {
+						writeJSON(w, http.StatusOK, payload)
+						return
+					}
+				}
+			}
+
+			// Single repo CPG DB
+			dbTarget := repoParam
+			if dbTarget == "" {
+				dbTarget = projectParam
+			}
+			cpgPath, err := cpg.FindCPGDB(dbTarget)
+			if err != nil {
+				writeError(w, http.StatusNotFound, "No CPG database found for '"+dbTarget+"'. Please trigger CPG indexing first: "+err.Error())
+				return
+			}
+
+			payload, err := cpg.QueryCPGGraph(cpgPath, limit, labels, edgeTypes, query)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "Failed to query CPG data: "+err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, payload)
+			return
+		}
 		// AST Scope:
 		if repoParam == "" || repoParam == "all" {
 			var repoNames []string
@@ -1019,6 +1177,93 @@ if ($p) { [Console]::Out.Write($p) }
 			return
 		}
 		writeJSON(w, http.StatusOK, payload)
+	})
+	// 11.5. GET /api/cpg/status
+	mux.HandleFunc("/api/cpg/status", func(w http.ResponseWriter, r *http.Request) {
+		if !checkAuth(r, authToken) {
+			writeError(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		writeJSON(w, http.StatusOK, cpg.CheckJoernStatus())
+	})
+
+	// 11.6. GET /api/cpg/query (callers, callees, references, cfg, data_flow, types)
+	mux.HandleFunc("/api/cpg/query", func(w http.ResponseWriter, r *http.Request) {
+		if !checkAuth(r, authToken) {
+			writeError(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		repo := r.URL.Query().Get("repo")
+		if repo == "" {
+			repo = r.URL.Query().Get("project")
+		}
+		if repo == "" {
+			writeError(w, http.StatusBadRequest, "Missing 'repo' or 'project' parameter")
+			return
+		}
+		dbPath, err := cpg.FindCPGDB(repo)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "CPG database not found: "+err.Error())
+			return
+		}
+
+		queryType := r.URL.Query().Get("type")
+		symbol := r.URL.Query().Get("symbol")
+		if symbol == "" {
+			symbol = r.URL.Query().Get("target")
+		}
+
+		switch strings.ToLower(queryType) {
+		case "callers":
+			res, err := cpg.GetCPGCallers(dbPath, symbol)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"query": queryType, "symbol": symbol, "results": res})
+		case "callees":
+			res, err := cpg.GetCPGCallees(dbPath, symbol)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"query": queryType, "symbol": symbol, "results": res})
+		case "references", "refs":
+			res, err := cpg.GetCPGReferences(dbPath, symbol)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"query": queryType, "symbol": symbol, "results": res})
+		case "cfg", "control_flow":
+			res, err := cpg.GetCPGControlFlow(dbPath, symbol)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"query": queryType, "symbol": symbol, "results": res})
+		case "data_flow", "dataflow":
+			source := r.URL.Query().Get("source")
+			if source == "" {
+				source = symbol
+			}
+			sink := r.URL.Query().Get("sink")
+			res, err := cpg.GetCPGDataFlow(dbPath, source, sink)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"query": queryType, "source": source, "sink": sink, "results": res})
+		case "types", "type_relations":
+			res, err := cpg.GetCPGTypeRelations(dbPath, symbol)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"query": queryType, "symbol": symbol, "results": res})
+		default:
+			writeError(w, http.StatusBadRequest, "Invalid query type. Supported: callers, callees, references, cfg, data_flow, types")
+		}
 	})
 
 	// 12. GET /api/ai/credentials (Detect active AI harness / environment credentials)

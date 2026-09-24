@@ -11,6 +11,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"cb-indexer/internal/cbmwrite"
+	"cb-indexer/internal/cpg"
 	"cb-indexer/internal/gitwatcher"
 	"cb-indexer/internal/graphmeta"
 	"cb-indexer/internal/registry"
@@ -38,10 +39,22 @@ type TriggerIndexInput struct {
 	Project     string `json:"project,omitempty" jsonschema:"Optional project ID or registry path"`
 	RepoName    string `json:"repo_name,omitempty" jsonschema:"Optional specific repository name to index"`
 	Mode        string `json:"mode,omitempty" jsonschema:"Indexing mode: 'moderate' (recommended), 'full', or 'fast'"`
+	Engine      string `json:"engine,omitempty" jsonschema:"Indexing engine: 'ast', 'cpg', or 'both' (default: both if cpg available, else ast)"`
 	Pull        bool   `json:"pull,omitempty" jsonschema:"Whether to git pull latest commits before indexing (default: false)"`
 	Persistence bool   `json:"persistence,omitempty" jsonschema:"Generate .codebase-memory/ artifacts in repo directories (default: false)"`
 }
 
+type CPGStatusInput struct{}
+
+type QueryCPGInput struct {
+	Project   string `json:"project,omitempty" jsonschema:"Optional project ID or registry path"`
+	RepoName  string `json:"repo_name" jsonschema:"Repository name to query CPG for"`
+	QueryType string `json:"query_type" jsonschema:"Query type: 'callers', 'callees', 'references', 'cfg', 'data_flow', 'types', or 'graph'"`
+	Symbol    string `json:"symbol,omitempty" jsonschema:"Target symbol or method name"`
+	Source    string `json:"source,omitempty" jsonschema:"Source symbol for data_flow query"`
+	Sink      string `json:"sink,omitempty" jsonschema:"Sink symbol for data_flow query"`
+	Limit     int    `json:"limit,omitempty" jsonschema:"Result limit (default: 250)"`
+}
 type ScanCreateInput struct {
 	WorkspacePath string `json:"workspace_path" jsonschema:"Directory containing sub-repositories to scan"`
 	OutputFile    string `json:"output_file,omitempty" jsonschema:"Optional path to save registry.yaml"`
@@ -234,6 +247,10 @@ func RegisterTools(s *mcp.Server) {
 		if mode == "" {
 			mode = "moderate"
 		}
+		engine := strings.ToLower(strings.TrimSpace(input.Engine))
+		if engine == "" {
+			engine = "both"
+		}
 
 		if input.RepoName != "" {
 			repo := reg.GetRepo(input.RepoName)
@@ -251,8 +268,23 @@ func RegisterTools(s *mcp.Server) {
 			if input.Pull {
 				_, _ = gitwatcher.GitPull(ctx, fullPath)
 			}
-			res := cbmwrite.IndexSingleRepo(ctx, fullPath, repo.Name, mode, input.Persistence)
-			return jsonResult(res), nil, nil
+
+			result := map[string]any{"repo": repo.Name, "engine": engine}
+			if engine != "cpg" {
+				res := cbmwrite.IndexSingleRepo(ctx, fullPath, repo.Name, mode, input.Persistence)
+				result["ast_result"] = res
+			}
+			if engine == "cpg" || engine == "both" {
+				cpgRes := cpg.IndexSingleRepo(ctx, fullPath, repo.Name, true)
+				result["cpg_result"] = cpgRes
+
+				if astDb, err := graphmeta.FindCbmDB(repo.Name); err == nil {
+					if cpgDb, err := cpg.FindCPGDB(repo.Name); err == nil {
+						_, _ = cpg.CorrelateCPGDatabase(cpgDb, astDb)
+					}
+				}
+			}
+			return jsonResult(result), nil, nil
 		}
 
 		if input.Pull {
@@ -273,8 +305,25 @@ func RegisterTools(s *mcp.Server) {
 				}
 			}
 		}
-		report := cbmwrite.BatchIndexProject(ctx, reg, mode, input.Persistence)
-		return jsonResult(report), nil, nil
+
+		result := map[string]any{"project": reg.ProjectID, "engine": engine}
+		if engine != "cpg" {
+			report := cbmwrite.BatchIndexProject(ctx, reg, mode, input.Persistence)
+			result["ast_report"] = report
+		}
+		if engine == "cpg" || engine == "both" {
+			cpgReport := cpg.BatchIndexProjects(ctx, reg, true, nil)
+			result["cpg_report"] = cpgReport
+
+			for _, r := range reg.Repos {
+				if astDb, err := graphmeta.FindCbmDB(r.Name); err == nil {
+					if cpgDb, err := cpg.FindCPGDB(r.Name); err == nil {
+						_, _ = cpg.CorrelateCPGDatabase(cpgDb, astDb)
+					}
+				}
+			}
+		}
+		return jsonResult(result), nil, nil
 	})
 
 	// Tool 8: scan_and_create_registry
@@ -426,6 +475,91 @@ func RegisterTools(s *mcp.Server) {
 		}
 		snippet.Project = repo.Name
 		return jsonResult(snippet), nil, nil
+	})
+
+	// Tool 13: check_cpg_status
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "check_cpg_status",
+		Description: "Check Joern CPG engine reachability, version, cache directory, and indexed graph counts.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input CPGStatusInput) (*mcp.CallToolResult, any, error) {
+		status := cpg.CheckJoernStatus()
+		return jsonResult(status), nil, nil
+	})
+
+	// Tool 14: query_cpg
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "query_cpg",
+		Description: "Query Code Property Graph (CPG) relationships: callers, callees, variable references, control-flow graph (CFG), data-flow paths, and type relations.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input QueryCPGInput) (*mcp.CallToolResult, any, error) {
+		repo := input.RepoName
+		if repo == "" {
+			repo = input.Project
+		}
+		if repo == "" {
+			return errorResult(fmt.Errorf("missing 'repo_name' parameter")), nil, nil
+		}
+
+		dbPath, err := cpg.FindCPGDB(repo)
+		if err != nil {
+			return errorResult(fmt.Errorf("CPG database not found for '%s': %w", repo, err)), nil, nil
+		}
+
+		queryType := strings.ToLower(strings.TrimSpace(input.QueryType))
+		limit := input.Limit
+		if limit <= 0 {
+			limit = 250
+		}
+
+		switch queryType {
+		case "callers":
+			res, err := cpg.GetCPGCallers(dbPath, input.Symbol)
+			if err != nil {
+				return errorResult(err), nil, nil
+			}
+			return jsonResult(map[string]any{"repo": repo, "query": queryType, "symbol": input.Symbol, "count": len(res), "callers": res}), nil, nil
+		case "callees":
+			res, err := cpg.GetCPGCallees(dbPath, input.Symbol)
+			if err != nil {
+				return errorResult(err), nil, nil
+			}
+			return jsonResult(map[string]any{"repo": repo, "query": queryType, "symbol": input.Symbol, "count": len(res), "callees": res}), nil, nil
+		case "references", "refs":
+			res, err := cpg.GetCPGReferences(dbPath, input.Symbol)
+			if err != nil {
+				return errorResult(err), nil, nil
+			}
+			return jsonResult(map[string]any{"repo": repo, "query": queryType, "symbol": input.Symbol, "count": len(res), "references": res}), nil, nil
+		case "cfg", "control_flow":
+			res, err := cpg.GetCPGControlFlow(dbPath, input.Symbol)
+			if err != nil {
+				return errorResult(err), nil, nil
+			}
+			return jsonResult(map[string]any{"repo": repo, "query": queryType, "symbol": input.Symbol, "flow": res}), nil, nil
+		case "data_flow", "dataflow":
+			source := input.Source
+			if source == "" {
+				source = input.Symbol
+			}
+			res, err := cpg.GetCPGDataFlow(dbPath, source, input.Sink)
+			if err != nil {
+				return errorResult(err), nil, nil
+			}
+			return jsonResult(map[string]any{"repo": repo, "query": queryType, "source": source, "sink": input.Sink, "flow": res}), nil, nil
+		case "types", "type_relations":
+			res, err := cpg.GetCPGTypeRelations(dbPath, input.Symbol)
+			if err != nil {
+				return errorResult(err), nil, nil
+			}
+			return jsonResult(map[string]any{"repo": repo, "query": queryType, "symbol": input.Symbol, "relations": res}), nil, nil
+		case "graph", "":
+			payload, err := cpg.QueryCPGGraph(dbPath, limit, nil, nil, input.Symbol)
+			if err != nil {
+				return errorResult(err), nil, nil
+			}
+			return jsonResult(payload), nil, nil
+		default:
+			return errorResult(fmt.Errorf("unsupported query_type '%s'. Supported: callers, callees, references, cfg, data_flow, types, graph", queryType)), nil, nil
+		}
 	})
 }
 
