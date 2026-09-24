@@ -209,5 +209,38 @@ func TestMonorepoWorkspaceTraversal(t *testing.T) {
 		t.Fatalf("Monorepo container root-monorepo should not be registered as a leaf repo")
 	}
 }
+func TestScannerQuotesAndPathSanitization(t *testing.T) {
+	tmpWorkspace, err := os.MkdirTemp("", "quoted-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpWorkspace)
+
+	appDir := filepath.Join(tmpWorkspace, "my-app")
+	_ = os.MkdirAll(appDir, 0755)
+	_ = os.WriteFile(filepath.Join(appDir, "package.json"), []byte(`{"name":"my-app"}`), 0644)
+
+	// Test with surrounding double quotes (Windows Copy as path format)
+	quotedPath := `"` + tmpWorkspace + `"`
+	reg, err := ScanWorkspace(quotedPath, "  quoted-project  ")
+	if err != nil {
+		t.Fatalf("Failed to scan quoted path: %v", err)
+	}
+	if reg.ProjectID != "quoted-project" {
+		t.Fatalf("Expected sanitized projectID 'quoted-project', got '%s'", reg.ProjectID)
+	}
+	if len(reg.Repos) != 1 || reg.Repos[0].Name != "my-app" {
+		t.Fatalf("Expected 1 repo named my-app, got %+v", reg.Repos)
+	}
+
+	// Test with empty project ID deriving base folder safely
+	reg2, err := ScanWorkspace(tmpWorkspace, "")
+	if err != nil {
+		t.Fatalf("Failed to scan with empty project ID: %v", err)
+	}
+	if reg2.ProjectID == "" || reg2.ProjectID == "." {
+		t.Fatalf("Expected valid non-empty project ID, got '%s'", reg2.ProjectID)
+	}
+}
 
 

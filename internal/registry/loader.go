@@ -86,6 +86,7 @@ func ResolveRegistryPath(target string) (string, error) {
 				}
 			}
 		}
+		return "", fmt.Errorf("project or registry '%s' not found", target)
 	}
 
 	// 2. Environment variables
