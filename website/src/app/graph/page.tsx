@@ -50,7 +50,7 @@ function AstExplorerContent() {
   const [graphData, setGraphData] = useState<GraphPayload | null>(null);
   const [viewMode, setViewMode] = useState<AstViewMode>('3d');
   const [showLegend, setShowLegend] = useState(false);
-  const [edgeThickness, setEdgeThickness] = useState(2.5);
+  const [edgeThickness, setEdgeThickness] = useState(1);
   const [edgeOpacity, setEdgeOpacity] = useState(0.75);
   const [nodeSize, setNodeSize] = useState(1.0);
   const [nodeOpacity, setNodeOpacity] = useState(1.0);
@@ -171,7 +171,7 @@ function AstExplorerContent() {
   }, [searchQuery, graphData]);
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-[#090d16] text-gray-100 overflow-hidden select-none">
+    <div className="h-screen w-screen flex flex-col bg-[#090d16] text-gray-100 overflow-hidden">
       {/* Top Header Bar */}
       <header className="flex items-center justify-between px-4 py-2.5 bg-gray-950/90 border-b border-white/10 z-30 shrink-0">
         <div className="flex items-center gap-3">

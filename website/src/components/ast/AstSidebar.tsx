@@ -63,7 +63,7 @@ export function AstSidebar({
   selectedNode,
   onSelectNode,
   onClearSelectedNode,
-  edgeThickness = 2.5,
+  edgeThickness = 1,
   onChangeEdgeThickness,
   edgeOpacity = 0.75,
   onChangeEdgeOpacity,
@@ -80,9 +80,8 @@ export function AstSidebar({
 
   return (
     <aside
-      className={`relative h-full flex flex-col bg-gray-950/80 border-r border-white/10 transition-all duration-300 z-30 shrink-0 ${
-        isCollapsed ? 'w-12' : activeTab === 'ask' ? 'w-96 sm:w-[410px]' : 'w-80 sm:w-88'
-      }`}
+      className={`relative h-full flex flex-col bg-gray-950/80 border-r border-white/10 transition-all duration-300 z-30 shrink-0 ${isCollapsed ? 'w-12' : activeTab === 'ask' ? 'w-96 sm:w-[410px]' : 'w-80 sm:w-88'
+        }`}
     >
       {/* Collapse/Expand Toggle Button */}
       <button
@@ -101,9 +100,8 @@ export function AstSidebar({
               setIsCollapsed(false);
               setActiveTab('ask');
             }}
-            className={`p-2 rounded-xl transition-colors ${
-              activeTab === 'ask' ? 'bg-purple-600 text-white shadow-md' : 'text-gray-400 hover:text-white'
-            }`}
+            className={`p-2 rounded-xl transition-colors ${activeTab === 'ask' ? 'bg-purple-600 text-white shadow-md' : 'text-gray-400 hover:text-white'
+              }`}
             title="Ask AI Assistant"
           >
             <Sparkles className="w-4 h-4 text-purple-300" />
@@ -113,9 +111,8 @@ export function AstSidebar({
               setIsCollapsed(false);
               setActiveTab('filters');
             }}
-            className={`p-2 rounded-xl transition-colors ${
-              activeTab === 'filters' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
-            }`}
+            className={`p-2 rounded-xl transition-colors ${activeTab === 'filters' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+              }`}
             title="Filters & Types"
           >
             <SlidersHorizontal className="w-4 h-4" />
@@ -125,9 +122,8 @@ export function AstSidebar({
               setIsCollapsed(false);
               setActiveTab('tree');
             }}
-            className={`p-2 rounded-xl transition-colors ${
-              activeTab === 'tree' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
-            }`}
+            className={`p-2 rounded-xl transition-colors ${activeTab === 'tree' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+              }`}
             title="Project Tree"
           >
             <FolderTree className="w-4 h-4" />
@@ -165,33 +161,30 @@ export function AstSidebar({
           <div className="flex items-center p-1.5 bg-black/30 border-b border-white/10 shrink-0 gap-1">
             <button
               onClick={() => setActiveTab('ask')}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === 'ask'
+              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${activeTab === 'ask'
                   ? 'bg-purple-600/30 border border-purple-500/40 text-purple-200 shadow-sm'
                   : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
-              }`}
+                }`}
             >
               <Sparkles className="w-3.5 h-3.5 text-purple-400" />
               <span>Ask AI</span>
             </button>
             <button
               onClick={() => setActiveTab('filters')}
-              className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === 'filters'
+              className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-semibold transition-all ${activeTab === 'filters'
                   ? 'bg-white/15 text-white shadow-sm'
                   : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
-              }`}
+                }`}
             >
               <SlidersHorizontal className="w-3.5 h-3.5 text-blue-400" />
               <span>Filters</span>
             </button>
             <button
               onClick={() => setActiveTab('tree')}
-              className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === 'tree'
+              className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-semibold transition-all ${activeTab === 'tree'
                   ? 'bg-white/15 text-white shadow-sm'
                   : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
-              }`}
+                }`}
             >
               <FolderTree className="w-3.5 h-3.5 text-emerald-400" />
               <span>Project Tree</span>
@@ -204,7 +197,7 @@ export function AstSidebar({
               <AstAskTab
                 graphData={data}
                 selectedNode={selectedNode}
-                onClearSelectedNode={onClearSelectedNode || (() => {})}
+                onClearSelectedNode={onClearSelectedNode || (() => { })}
               />
             </div>
           ) : activeTab === 'filters' ? (
@@ -341,11 +334,10 @@ export function AstSidebar({
                       <button
                         key={label}
                         onClick={() => onToggleLabel(label)}
-                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium border transition-all ${
-                          isSelected
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium border transition-all ${isSelected
                             ? 'bg-white/10 border-white/20 text-white'
                             : 'opacity-35 bg-black/40 border-white/5 text-gray-500'
-                        }`}
+                          }`}
                       >
                         <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
                         <span>{label}</span>
@@ -387,11 +379,10 @@ export function AstSidebar({
                       <button
                         key={type}
                         onClick={() => onToggleEdgeType(type)}
-                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-mono border transition-all ${
-                          isSelected
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-mono border transition-all ${isSelected
                             ? 'bg-white/10 border-white/20 text-gray-200'
                             : 'opacity-35 bg-black/40 border-white/5 text-gray-500'
-                        }`}
+                          }`}
                       >
                         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
                         <span>{type}</span>
