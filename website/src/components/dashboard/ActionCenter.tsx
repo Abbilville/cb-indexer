@@ -15,14 +15,15 @@ export function ActionCenter({ currentProject, onRefresh, onOpenDelete }: Action
   const { showToast } = useToast();
   const [isReindexing, setIsReindexing] = useState(false);
   const [isPulling, setIsPulling] = useState(false);
-
+  const [engine, setEngine] = useState<'ast' | 'cpg' | 'both'>('both');
   const handleReindexAll = async () => {
     try {
       setIsReindexing(true);
       await ApiService.triggerReindex({
         project: currentProject,
+        engine,
       });
-      showToast('Global re-indexing triggered', 'success');
+      showToast(`${engine === 'both' ? 'Global' : engine.toUpperCase()} re-indexing triggered`, 'success');
       onRefresh();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to trigger re-index';
@@ -38,8 +39,9 @@ export function ActionCenter({ currentProject, onRefresh, onOpenDelete }: Action
       await ApiService.triggerReindex({
         project: currentProject,
         pull: true,
+        engine,
       });
-      showToast('Git pull & sync triggered across repositories', 'success');
+      showToast(`Git pull & ${engine === 'both' ? 'AST+CPG' : engine.toUpperCase()} sync triggered`, 'success');
       onRefresh();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Git pull & sync failed';
@@ -54,6 +56,54 @@ export function ActionCenter({ currentProject, onRefresh, onOpenDelete }: Action
       <div className="flex items-center gap-2 pb-3 mb-3 border-b border-white/10 text-white font-bold text-xs uppercase tracking-wider">
         <Zap className="w-4 h-4 text-amber-400" />
         <span>Action Center</span>
+      </div>
+
+      {/* Indexing Engine Segmented Toggle */}
+      <div className="space-y-1.5 mb-3">
+        <div className="flex items-center justify-between text-[11px] text-gray-400">
+          <span className="font-semibold uppercase tracking-wider text-[10px]">Engine Mode</span>
+          <span className="font-mono text-[10px] text-blue-400">
+            {engine === 'both' ? 'AST + CPG' : engine.toUpperCase()}
+          </span>
+        </div>
+        <div className="grid grid-cols-3 gap-1 p-1 bg-black/40 border border-white/5 rounded-xl text-xs font-mono">
+          <button
+            type="button"
+            onClick={() => setEngine('ast')}
+            className={`py-1 rounded-lg text-center transition-all ${
+              engine === 'ast'
+                ? 'bg-purple-600/30 text-purple-200 border border-purple-500/40 font-semibold shadow-sm'
+                : 'text-gray-400 hover:text-white'
+            }`}
+            title="Tree-sitter AST Knowledge Graph"
+          >
+            AST
+          </button>
+          <button
+            type="button"
+            onClick={() => setEngine('cpg')}
+            className={`py-1 rounded-lg text-center transition-all ${
+              engine === 'cpg'
+                ? 'bg-cyan-600/30 text-cyan-200 border border-cyan-500/40 font-semibold shadow-sm'
+                : 'text-gray-400 hover:text-white'
+            }`}
+            title="Joern Code Property Graph"
+          >
+            CPG
+          </button>
+          <button
+            type="button"
+            onClick={() => setEngine('both')}
+            className={`py-1 rounded-lg text-center transition-all ${
+              engine === 'both'
+                ? 'bg-blue-600 text-white font-semibold shadow-sm'
+                : 'text-gray-400 hover:text-white'
+            }`}
+            title="Both AST and CPG (Correlated)"
+          >
+            Both
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-2.5">

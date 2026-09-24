@@ -201,6 +201,7 @@ export class ApiService {
     project?: string;
     repoName?: string;
     pull?: boolean;
+    engine?: 'ast' | 'cpg' | 'both';
   }): Promise<{ status: string; message: string }> {
     return this.request<{ status: string; message: string }>('/api/trigger', {
       method: 'POST',
@@ -209,6 +210,7 @@ export class ApiService {
         repo_name: params.repoName,
         repo: params.repoName,
         pull: !!params.pull,
+        engine: params.engine || 'both',
       }),
     });
   }
@@ -248,6 +250,7 @@ export class ApiService {
   public static async deleteProject(params: {
     projectId: string;
     purgeGraphs: boolean;
+    purgeCpg?: boolean;
   }): Promise<{ status: string; message: string }> {
     return this.request<{ status: string; message: string }>('/api/project/remove', {
       method: 'POST',
@@ -255,6 +258,7 @@ export class ApiService {
         project_id: params.projectId,
         project: params.projectId,
         purge_graphs: params.purgeGraphs,
+        purge_cpg: params.purgeCpg ?? params.purgeGraphs,
       }),
     });
   }

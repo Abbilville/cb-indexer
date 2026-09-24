@@ -16,6 +16,7 @@ export function ScanModal({ isOpen, onClose, onScanComplete }: ScanModalProps) {
   const { showToast } = useToast();
   const [path, setPath] = useState('.');
   const [projectId, setProjectId] = useState('');
+  const [indexEngine, setIndexEngine] = useState<'both' | 'ast' | 'cpg' | 'none'>('both');
   const [isScanning, setIsScanning] = useState(false);
   const [isExplorerOpen, setIsExplorerOpen] = useState(false);
   if (!isOpen) return null;
@@ -46,6 +47,15 @@ export function ScanModal({ isOpen, onClose, onScanComplete }: ScanModalProps) {
       const count = res.total_repos ?? res.repos_count ?? 0;
       showToast(res.message || `Scan complete: found ${count} repositories`, 'success');
       onScanComplete(res.project_id);
+
+      // Auto-trigger indexing if requested
+      if (indexEngine !== 'none' && res.project_id) {
+        ApiService.triggerReindex({
+          project: res.project_id,
+          engine: indexEngine,
+        }).catch(() => {});
+        showToast(`Triggered ${indexEngine.toUpperCase()} indexing in background`, 'info');
+      }
       onClose();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Scan failed';
@@ -103,6 +113,72 @@ export function ScanModal({ isOpen, onClose, onScanComplete }: ScanModalProps) {
               placeholder="e.g. ecommerce-core"
               className="w-full px-3.5 py-2.5 bg-black/50 border border-white/10 rounded-xl text-sm text-gray-100 placeholder:text-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50"
             />
+          </div>
+
+          {/* Indexing Engine Option */}
+          <div className="space-y-1.5 pt-2 border-t border-white/5">
+            <label className="text-xs font-medium text-gray-300 block">
+              Auto-Index Discovered Repositories
+            </label>
+            <div className="grid grid-cols-4 gap-1.5 p-1 bg-black/50 border border-white/10 rounded-xl text-xs font-mono">
+              <button
+                type="button"
+                onClick={() => setIndexEngine('both')}
+                className={`py-1.5 rounded-lg text-center transition-all ${
+                  indexEngine === 'both'
+                    ? 'bg-blue-600 text-white font-semibold shadow-sm'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+                title="Index Tree-sitter AST & Joern CPG"
+              >
+                Both
+              </button>
+              <button
+                type="button"
+                onClick={() => setIndexEngine('ast')}
+                className={`py-1.5 rounded-lg text-center transition-all ${
+                  indexEngine === 'ast'
+                    ? 'bg-purple-600/30 text-purple-200 border border-purple-500/40 font-semibold'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+                title="Index Tree-sitter AST only"
+              >
+                AST
+              </button>
+              <button
+                type="button"
+                onClick={() => setIndexEngine('cpg')}
+                className={`py-1.5 rounded-lg text-center transition-all ${
+                  indexEngine === 'cpg'
+                    ? 'bg-cyan-600/30 text-cyan-200 border border-cyan-500/40 font-semibold'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+                title="Index Joern CPG only"
+              >
+                CPG
+              </button>
+              <button
+                type="button"
+                onClick={() => setIndexEngine('none')}
+                className={`py-1.5 rounded-lg text-center transition-all ${
+                  indexEngine === 'none'
+                    ? 'bg-white/20 text-white font-semibold'
+                    : 'text-gray-500 hover:text-white'
+                }`}
+                title="Scan manifest only without indexing"
+              >
+                Skip
+              </button>
+            </div>
+            <p className="text-[11px] text-gray-500">
+              {indexEngine === 'both'
+                ? 'Will generate Tree-sitter AST and Joern CPG with cross-graph correlation.'
+                : indexEngine === 'ast'
+                ? 'Will index Tree-sitter AST only (functions, classes, routes).'
+                : indexEngine === 'cpg'
+                ? 'Will index Joern CPG only (call graphs, CFG, data flow).'
+                : 'Will register project without indexing immediately.'}
+            </p>
           </div>
 
           <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-white/10">

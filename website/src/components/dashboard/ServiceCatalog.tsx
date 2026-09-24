@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { RepoDetail } from '../../types/project';
-import { Search, Server, Database, GitBranch, ArrowRight, X } from 'lucide-react';
+import { Search, Server, Database, GitBranch, ArrowRight, X, Network } from 'lucide-react';
 
 interface ServiceCatalogProps {
   repos: RepoDetail[];
@@ -89,17 +89,27 @@ export function ServiceCatalog({ repos, onSelectRepo }: ServiceCatalogProps) {
                       </span>
                     )}
                     <span
-                      className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                      className={`text-[10px] px-1.5 py-0.5 rounded border font-mono ${
                         repo.is_indexed
-                          ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                          : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                          ? 'bg-purple-500/15 border-purple-500/30 text-purple-300'
+                          : 'bg-white/5 border-white/10 text-gray-500'
                       }`}
+                      title={repo.is_indexed ? 'Tree-sitter AST Indexed' : 'Tree-sitter AST Unindexed'}
                     >
-                      {repo.is_indexed ? 'Indexed' : 'Unindexed'}
+                      AST
+                    </span>
+                    <span
+                      className={`text-[10px] px-1.5 py-0.5 rounded border font-mono ${
+                        repo.is_cpg_indexed
+                          ? 'bg-cyan-500/15 border-cyan-500/30 text-cyan-300'
+                          : 'bg-white/5 border-white/10 text-gray-500'
+                      }`}
+                      title={repo.is_cpg_indexed ? 'Joern CPG Indexed' : 'Joern CPG Unindexed'}
+                    >
+                      CPG
                     </span>
                   </div>
                 </div>
-
                 {/* Tech Stack Pills */}
                 {repo.tech_stack && repo.tech_stack.length > 0 && (
                   <div className="flex flex-wrap gap-1 mb-3">
@@ -117,16 +127,24 @@ export function ServiceCatalog({ repos, onSelectRepo }: ServiceCatalogProps) {
 
               {/* Bottom stats row */}
               <div className="flex items-center justify-between pt-2.5 border-t border-white/5 text-[11px] text-gray-500">
-                <div className="flex items-center gap-3">
-                  <span className="flex items-center gap-1">
+                <div className="flex items-center gap-2.5">
+                  <span className="flex items-center gap-1" title="Tree-sitter AST Nodes">
                     <Database className="w-3 h-3 text-purple-400" />
-                    <span className="font-mono text-gray-300">
+                    <span className="font-mono text-gray-300 text-[10px]">
                       {repo.index_nodes ? repo.index_nodes.toLocaleString() : 0}
                     </span>
                   </span>
+                  {repo.is_cpg_indexed && (
+                    <span className="flex items-center gap-1" title="Joern CPG Nodes">
+                      <Network className="w-3 h-3 text-cyan-400" />
+                      <span className="font-mono text-cyan-300 text-[10px]">
+                        {repo.cpg_nodes ? repo.cpg_nodes.toLocaleString() : 0}
+                      </span>
+                    </span>
+                  )}
                   <span className="flex items-center gap-1">
                     <GitBranch className="w-3 h-3 text-gray-400" />
-                    <span className="capitalize">{repo.git_origin || 'local'}</span>
+                    <span className="capitalize text-[10px]">{repo.git_origin || 'local'}</span>
                   </span>
                 </div>
 

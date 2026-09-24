@@ -17,6 +17,7 @@ export function DeleteModal({ isOpen, projectId, projectName, onClose, onDeleted
   const { showToast } = useToast();
   const [confirmInput, setConfirmInput] = useState('');
   const [purgeGraphs, setPurgeGraphs] = useState(true);
+  const [purgeCpg, setPurgeCpg] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -71,8 +72,8 @@ export function DeleteModal({ isOpen, projectId, projectName, onClose, onDeleted
       await ApiService.deleteProject({
         projectId: targetId,
         purgeGraphs,
+        purgeCpg,
       });
-
       showToast(`Project '${projectName || targetId}' deleted successfully`, 'success');
       resetState();
       onDeleted();
@@ -116,7 +117,7 @@ export function DeleteModal({ isOpen, projectId, projectName, onClose, onDeleted
           This will unregister <code className="bg-black/50 text-white px-1.5 py-0.5 rounded font-mono">{projectName || targetId}</code> from the catalog and clear its saved layout.
         </div>
 
-        <div className="mb-4">
+        <div className="mb-4 space-y-2">
           <label className="flex items-center gap-2.5 cursor-pointer text-xs text-gray-300 select-none">
             <input
               type="checkbox"
@@ -125,7 +126,17 @@ export function DeleteModal({ isOpen, projectId, projectName, onClose, onDeleted
               disabled={isDeleting}
               className="w-4 h-4 rounded accent-rose-500 border-white/20 bg-black/40"
             />
-            <span>Purge AST knowledge graph databases (<code className="font-mono text-gray-400">codebase-memory-mcp</code>)</span>
+            <span>Purge Tree-sitter AST graph caches (<code className="font-mono text-gray-400">codebase-memory-mcp</code>)</span>
+          </label>
+          <label className="flex items-center gap-2.5 cursor-pointer text-xs text-gray-300 select-none">
+            <input
+              type="checkbox"
+              checked={purgeCpg}
+              onChange={(e) => setPurgeCpg(e.target.checked)}
+              disabled={isDeleting}
+              className="w-4 h-4 rounded accent-rose-500 border-white/20 bg-black/40"
+            />
+            <span>Purge Joern Code Property Graph databases (<code className="font-mono text-gray-400">cb-indexer/cpg</code>)</span>
           </label>
         </div>
 

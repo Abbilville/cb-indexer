@@ -154,7 +154,66 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 		}
 
 		status := graphmeta.CheckProjectStatus(reg)
-		writeJSON(w, http.StatusOK, status)
+
+		// Enrich status with CPG metrics
+		cpgItems := cpg.ScanGlobalCPGCache()
+		cpgMap := make(map[string]cpg.CPGCacheItem, len(cpgItems))
+		for _, item := range cpgItems {
+			cpgMap[strings.ToLower(item.Name)] = item
+		}
+
+		totalCpgNodes := 0
+		totalCpgEdges := 0
+		indexedCpgRepos := 0
+
+		type enrichedRepo struct {
+			graphmeta.RepoStatusDetail
+			IsCPGIndexed bool `json:"is_cpg_indexed"`
+			CPGNodes     *int `json:"cpg_nodes,omitempty"`
+			CPGEdges     *int `json:"cpg_edges,omitempty"`
+		}
+
+		enrichedRepos := make([]enrichedRepo, 0, len(status.Repos))
+		for _, r := range status.Repos {
+			er := enrichedRepo{RepoStatusDetail: r}
+			if item, exists := cpgMap[strings.ToLower(r.Name)]; exists && item.IsIndexed {
+				er.IsCPGIndexed = true
+				er.CPGNodes = item.Nodes
+				er.CPGEdges = item.Edges
+				indexedCpgRepos++
+				if item.Nodes != nil {
+					totalCpgNodes += *item.Nodes
+				}
+				if item.Edges != nil {
+					totalCpgEdges += *item.Edges
+				}
+			}
+			enrichedRepos = append(enrichedRepos, er)
+		}
+
+		cpgStat := cpg.CheckJoernStatus()
+
+		overviewPayload := map[string]any{
+			"project_id":          status.ProjectID,
+			"project_name":        status.ProjectName,
+			"description":         status.Description,
+			"git_url":             status.GitURL,
+			"source_path":         status.SourcePath,
+			"total_repos":         status.TotalRepos,
+			"indexed_repos":       status.IndexedRepos,
+			"unindexed_repos":     status.UnindexedRepos,
+			"total_nodes":         status.TotalNodes,
+			"total_edges":         status.TotalEdges,
+			"total_relationships": status.TotalRelationships,
+			"total_cpg_nodes":     totalCpgNodes,
+			"total_cpg_edges":     totalCpgEdges,
+			"indexed_cpg_repos":   indexedCpgRepos,
+			"cpg_status":          cpgStat,
+			"relationships":       status.Relationships,
+			"repos":               enrichedRepos,
+			"is_all_indexed":      status.IndexedRepos == status.TotalRepos,
+		}
+		writeJSON(w, http.StatusOK, overviewPayload)
 	})
 
 	// 3. GET /api/status
@@ -624,6 +683,7 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 			ProjectID   string `json:"project_id"`
 			Project     string `json:"project"`
 			PurgeGraphs bool   `json:"purge_graphs"`
+			PurgeCpg    bool   `json:"purge_cpg"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		if req.ProjectID == "" {
@@ -661,6 +721,14 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 			}
 		}
 
+		if req.PurgeCpg || req.PurgeGraphs {
+			if reg != nil {
+				for _, r := range reg.Repos {
+					_ = cpg.DeleteCPGDatabase(r.Name)
+				}
+			}
+			_ = cpg.DeleteCPGDatabase(pID)
+		}
 		unregistered := registry.UnregisterProjectFromCatalog(pID)
 		if req.ProjectID != pID {
 			if registry.UnregisterProjectFromCatalog(req.ProjectID) {
