@@ -6,20 +6,28 @@ import {
 } from '../types/project';
 import { GraphPayload } from '../types/graph';
 
-const AUTH_STORAGE_KEY = 'OSS_INDEXER_AUTH_TOKEN';
+const AUTH_STORAGE_KEY = 'CB_INDEXER_AUTH_TOKEN';
+const LEGACY_AUTH_STORAGE_KEY = 'OSS_INDEXER_AUTH_TOKEN';
 
 export class ApiService {
-  private static getAuthToken(): string {
+  public static getAuthToken(): string {
     if (typeof window === 'undefined') return '';
-    return localStorage.getItem(AUTH_STORAGE_KEY) || '';
+    return (
+      localStorage.getItem(AUTH_STORAGE_KEY) ||
+      localStorage.getItem(LEGACY_AUTH_STORAGE_KEY) ||
+      ''
+    );
   }
 
   public static setAuthToken(token: string): void {
     if (typeof window === 'undefined') return;
-    if (token.trim()) {
-      localStorage.setItem(AUTH_STORAGE_KEY, token.trim());
+    const trimmed = token.trim();
+    if (trimmed) {
+      localStorage.setItem(AUTH_STORAGE_KEY, trimmed);
+      localStorage.setItem(LEGACY_AUTH_STORAGE_KEY, trimmed);
     } else {
       localStorage.removeItem(AUTH_STORAGE_KEY);
+      localStorage.removeItem(LEGACY_AUTH_STORAGE_KEY);
     }
   }
 
@@ -27,7 +35,7 @@ export class ApiService {
     return !!this.getAuthToken();
   }
 
-  private static getHeaders(customHeaders?: HeadersInit): HeadersInit {
+  public static getHeaders(customHeaders?: HeadersInit): HeadersInit {
     const token = this.getAuthToken();
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -64,8 +72,37 @@ export class ApiService {
     return (await res.json()) as T;
   }
 
-  public static async getHealth(): Promise<{ status: string; service: string; auth_required: boolean }> {
-    return this.request<{ status: string; service: string; auth_required: boolean }>('/health');
+  public static async getHealth(): Promise<{ status: string; service: string; auth_required: boolean; authenticated?: boolean }> {
+    return this.request<{ status: string; service: string; auth_required: boolean; authenticated?: boolean }>('/health');
+  }
+
+  public static async verifyAuth(tokenOverride?: string): Promise<{ auth_required: boolean; authenticated: boolean; message: string }> {
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || '';
+    const url = `${baseUrl}/api/auth/verify`;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    const token = tokenOverride !== undefined ? tokenOverride.trim() : this.getAuthToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+      headers['X-API-Key'] = token;
+    }
+
+    try {
+      const res = await fetch(url, { headers });
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      return {
+        auth_required: Boolean(data.auth_required),
+        authenticated: Boolean(data.authenticated),
+        message: typeof data.message === 'string' ? data.message : res.ok ? 'Authenticated' : 'Unauthorized',
+      };
+    } catch {
+      return {
+        auth_required: true,
+        authenticated: false,
+        message: 'Network error or server unreachable',
+      };
+    }
   }
 
   public static async getProjects(): Promise<ProjectsResponse> {
@@ -151,6 +188,7 @@ export class ApiService {
       method: 'POST',
       body: JSON.stringify({
         project: params.project,
+        repo_name: params.repoName,
         repo: params.repoName,
         pull: !!params.pull,
       }),
@@ -160,12 +198,13 @@ export class ApiService {
   public static async scanWorkspace(params: {
     path: string;
     projectId?: string;
-  }): Promise<{ status: string; project_id: string; total_repos: number; message: string }> {
-    return this.request<{ status: string; project_id: string; total_repos: number; message: string }>(
+  }): Promise<{ status: string; project_id: string; total_repos: number; repos_count?: number; message?: string }> {
+    return this.request<{ status: string; project_id: string; total_repos: number; repos_count?: number; message?: string }>(
       '/api/scan',
       {
         method: 'POST',
         body: JSON.stringify({
+          workspace_path: params.path,
           path: params.path,
           project_id: params.projectId,
         }),
@@ -173,9 +212,18 @@ export class ApiService {
     );
   }
 
-  public static async browseFolder(): Promise<{ path: string; status: string }> {
-    return this.request<{ path: string; status: string }>('/api/browse-folder', {
+  public static async browseDirs(path?: string, showHidden?: boolean): Promise<{ current: string; parent: string; dirs: string[]; drives?: string[] }> {
+    const params = new URLSearchParams();
+    if (path) params.set('path', path);
+    if (showHidden) params.set('show_hidden', 'true');
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return this.request<{ current: string; parent: string; dirs: string[]; drives?: string[] }>(`/api/browse-dirs${query}`);
+  }
+
+  public static async browseFolder(initialPath?: string): Promise<{ path?: string; status: string; message?: string }> {
+    return this.request<{ path?: string; status: string; message?: string }>('/api/browse-folder', {
       method: 'POST',
+      body: JSON.stringify({ path: initialPath }),
     });
   }
 
@@ -186,6 +234,7 @@ export class ApiService {
     return this.request<{ status: string; message: string }>('/api/project/remove', {
       method: 'POST',
       body: JSON.stringify({
+        project_id: params.projectId,
         project: params.projectId,
         purge_graphs: params.purgeGraphs,
       }),
