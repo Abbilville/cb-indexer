@@ -12,6 +12,7 @@ export function Graph2DView({
   selectedEdge,
   onSelectNode,
   onSelectEdge,
+  onHoverNode,
   filterLabels,
   filterEdgeTypes,
   searchFocusId,
@@ -82,6 +83,8 @@ export function Graph2DView({
   const edgeOpacityRef = useRef<number>(edgeOpacity);
   const nodeSizeRef = useRef<number>(nodeSize);
   const nodeOpacityRef = useRef<number>(nodeOpacity);
+  const onHoverNodeRef = useRef(onHoverNode);
+  onHoverNodeRef.current = onHoverNode;
 
   selectedNodeRef.current = selectedNode;
   selectedEdgeRef.current = selectedEdge;
@@ -289,6 +292,10 @@ export function Graph2DView({
         .onBackgroundClick(() => {
           onSelectNode(null);
           onSelectEdge(null);
+        })
+        .onNodeHover((node: unknown) => {
+          const n = node as GraphNode | null;
+          onHoverNodeRef.current?.(n ? n.id : null);
         });
 
       // Spread out nodes cleanly to avoid messy hairballs

@@ -6,6 +6,7 @@ export interface GraphRendererProps {
   selectedEdge: GraphEdge | null;
   onSelectNode: (node: GraphNode | null) => void;
   onSelectEdge: (edge: GraphEdge | null) => void;
+  onHoverNode?: (nodeId: string | number | null) => void;
   filterLabels: string[];
   filterEdgeTypes: string[];
   searchFocusId?: string | number;

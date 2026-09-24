@@ -9,6 +9,7 @@ import { FloatingControls, AstViewMode } from '../../components/ast/FloatingCont
 import { FloatingLegend } from '../../components/ast/FloatingLegend';
 import { NodeInspector } from '../../components/graph/NodeInspector';
 import { EdgeInspector } from '../../components/graph/EdgeInspector';
+import { CodeViewer } from '../../components/graph/CodeViewer';
 import { RepoDetail, ProjectCatalogItem } from '../../types/project';
 import { ApiService } from '../../services/api';
 import {
@@ -21,7 +22,7 @@ import {
   PathResult,
   FlowResult,
 } from '../../types/graph';
-import { ArrowLeft, RefreshCw, Loader2, Database, Network, GitBranch } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Loader2, Database, Network, GitBranch, FileCode } from 'lucide-react';
 
 const Graph2DView = dynamic(
   () => import('../../components/graph/Graph2DView').then((mod) => mod.Graph2DView),
@@ -94,31 +95,48 @@ function AstExplorerContent() {
   const [pathFrom, setPathFrom] = useState('');
   const [pathTo, setPathTo] = useState('');
   const [pathRel, setPathRel] = useState('CALL');
+  // Code Viewer state
+  const [isCodeViewerOpen, setIsCodeViewerOpen] = useState(false);
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | number | null>(null);
 
   // Compute active analysis path highlight sets
   const { highlightedNodeIds, highlightedEdgeIds } = useMemo(() => {
     const nodeIds = new Set<string | number>();
     const edgeIds = new Set<string | number>();
 
+    // Add hovered node from Code Viewer or Graph for instant bidirectional focus
+    if (hoveredNodeId !== null && hoveredNodeId !== undefined) {
+      nodeIds.add(hoveredNodeId);
+    }
+
     if (callFlowResult) {
-      callFlowResult.nodes.forEach((n) => nodeIds.add(n.id));
-      callFlowResult.edges.forEach((e) => edgeIds.add(e.id));
+      (callFlowResult.nodes || []).forEach((n) => nodeIds.add(n.id));
+      (callFlowResult.edges || []).forEach((e) => edgeIds.add(e.id));
     } else if (flowResult) {
-      nodeIds.add(flowResult.source.id);
-      nodeIds.add(flowResult.sink.id);
-      flowResult.steps.forEach((s) => nodeIds.add(s.node.id));
+      if (flowResult.source) nodeIds.add(flowResult.source.id);
+      if (flowResult.sink) nodeIds.add(flowResult.sink.id);
+      (flowResult.steps || []).forEach((s) => nodeIds.add(s.node.id));
     } else if (impactResult) {
-      nodeIds.add(impactResult.target_node.id);
-      impactResult.direct_callers.forEach((n) => nodeIds.add(n.id));
-      impactResult.indirect_callers.forEach((n) => nodeIds.add(n.id));
-      impactResult.edges.forEach((e) => edgeIds.add(e.id));
+      if (impactResult.target_node) nodeIds.add(impactResult.target_node.id);
+      (impactResult.direct_callers || []).forEach((n) => nodeIds.add(n.id));
+      (impactResult.indirect_callers || []).forEach((n) => nodeIds.add(n.id));
+      (impactResult.edges || []).forEach((e) => edgeIds.add(e.id));
     } else if (pathResult && pathResult.found) {
-      pathResult.nodes.forEach((n) => nodeIds.add(n.id));
-      pathResult.edges.forEach((e) => edgeIds.add(e.id));
+      (pathResult.nodes || []).forEach((n) => nodeIds.add(n.id));
+      (pathResult.edges || []).forEach((e) => edgeIds.add(e.id));
     }
 
     return { highlightedNodeIds: nodeIds, highlightedEdgeIds: edgeIds };
-  }, [callFlowResult, flowResult, impactResult, pathResult]);
+  }, [callFlowResult, flowResult, impactResult, pathResult, hoveredNodeId]);
+
+  // Bidirectional node selection handler: focuses node and auto-opens Code Viewer
+  const handleSelectNode = useCallback((node: GraphNode | null) => {
+    setSelectedNode(node);
+    setSelectedEdge(null);
+    if (node?.file_path) {
+      setIsCodeViewerOpen(true);
+    }
+  }, []);
 
   const handleClearAnalysisPath = useCallback(() => {
     setCallFlowResult(null);
@@ -160,15 +178,20 @@ function AstExplorerContent() {
           const dir = action === 'callers' ? 'callers' : 'callees';
           setAnalysisMode('call_flow');
           setCallFlowDirection(dir);
-          const res = await ApiService.getCallFlow({
-            repo: repoTarget,
-            project: currentProjectId,
-            symbol: targetNode.name,
-            direction: dir,
-            depth: callFlowDepth,
-          });
-          setCallFlowResult(res);
-          showToast(`Traced ${res.nodes.length} ${dir} for ${targetNode.name}`, 'info');
+          try {
+            const res = await ApiService.getCallFlow({
+              repo: repoTarget,
+              project: currentProjectId,
+              symbol: targetNode.name,
+              direction: dir,
+              depth: callFlowDepth,
+            });
+            setCallFlowResult(res);
+            showToast(`Traced ${(res.nodes || []).length} ${dir} for ${targetNode.name}`, 'info');
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'Call flow analysis failed';
+            showToast(msg, 'error');
+          }
         } else if (action === 'control_flow') {
           setAnalysisMode('control_flow');
           const res = await ApiService.queryCPG({
@@ -179,7 +202,7 @@ function AstExplorerContent() {
           const flow = res.flow as FlowResult | undefined;
           if (flow) {
             setFlowResult(flow);
-            showToast(`Traced CFG for ${targetNode.name} (${flow.steps.length} steps)`, 'info');
+            showToast(`Traced CFG for ${targetNode.name} (${(flow.steps || []).length} steps)`, 'info');
           } else {
             showToast('No CFG steps found for this node', 'warn');
           }
@@ -194,22 +217,28 @@ function AstExplorerContent() {
           const flow = res.flow as FlowResult | undefined;
           if (flow) {
             setFlowResult(flow);
-            showToast(`Traced data flow from ${targetNode.name} (${flow.steps.length} steps)`, 'info');
+            showToast(`Traced data flow from ${targetNode.name} (${(flow.steps || []).length} steps)`, 'info');
           } else {
             showToast('No data flow outgoing from this node', 'warn');
           }
         } else if (action === 'impact') {
           setAnalysisMode('impact');
-          const res = await ApiService.getImpactAnalysis({
-            repo: repoTarget,
-            project: currentProjectId,
-            symbol: targetNode.name,
-          });
-          showToast(`Impact analysis: ${res.direct_count + res.indirect_count} dependents found`, 'info');
+          try {
+            const res = await ApiService.getImpactAnalysis({
+              repo: repoTarget,
+              project: currentProjectId,
+              symbol: targetNode.name,
+            });
+            setImpactResult(res);
+            showToast(`Impact analysis: ${(res.direct_count || 0) + (res.indirect_count || 0)} dependents found`, 'info');
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'Impact analysis failed';
+            showToast(msg, 'error');
+          }
         } else if (action === 'find_path') {
           setAnalysisMode('find_path');
           setPathFrom(targetNode.name);
-          showToast(`Set '${targetNode.name}' as starting point for path search`, 'info');
+          showToast(`Set '${targetNode.name}' as starting point. Now set 'To Symbol' in sidebar and click Find Path.`, 'info');
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Action failed';
@@ -523,6 +552,20 @@ function AstExplorerContent() {
             )}
           </div>
 
+          {/* Interactive Code Viewer Toggle Button */}
+          <button
+            onClick={() => setIsCodeViewerOpen((prev) => !prev)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-medium transition-all ${
+              isCodeViewerOpen
+                ? 'bg-blue-600/30 text-blue-200 border-blue-500/50 shadow-sm'
+                : 'bg-white/5 hover:bg-white/10 border-white/10 text-gray-300 hover:text-white'
+            }`}
+            title="Toggle Interactive Code Viewer"
+          >
+            <FileCode className="w-3.5 h-3.5 text-blue-400" />
+            <span className="hidden md:inline">Code Viewer</span>
+          </button>
+
           {/* Refresh Button */}
           <button
             onClick={handleRefresh}
@@ -535,8 +578,9 @@ function AstExplorerContent() {
         </div>
       </header>
 
-      {/* Main Split Layout: Sidebar + Canvas Area */}
-      <div className="flex-1 flex min-h-0 relative overflow-hidden">
+      {/* Main Split Layout: Sidebar + Canvas + Code Viewer */}
+      <div className="flex-1 flex flex-col min-h-0 relative overflow-hidden">
+        <div className="flex-1 flex min-h-0 relative overflow-hidden">
         {/* Left Sidebar (Filters + Project Tree) */}
         <AstSidebar
           data={graphData}
@@ -554,10 +598,7 @@ function AstExplorerContent() {
           searchQuery={searchQuery}
           onChangeSearchQuery={setSearchQuery}
           selectedNode={selectedNode}
-          onSelectNode={(n) => {
-            setSelectedNode(n);
-            setSelectedEdge(null);
-          }}
+          onSelectNode={handleSelectNode}
           onClearSelectedNode={() => setSelectedNode(null)}
           edgeThickness={edgeThickness}
           onChangeEdgeThickness={setEdgeThickness}
@@ -623,10 +664,8 @@ function AstExplorerContent() {
                   data={graphData}
                   selectedNode={selectedNode}
                   selectedEdge={selectedEdge}
-                  onSelectNode={(node) => {
-                    setSelectedNode(node);
-                    setSelectedEdge(null);
-                  }}
+                  onSelectNode={handleSelectNode}
+                  onHoverNode={setHoveredNodeId}
                   onSelectEdge={(edge) => {
                     setSelectedEdge(edge);
                     setSelectedNode(null);
@@ -650,10 +689,8 @@ function AstExplorerContent() {
                   data={graphData}
                   selectedNode={selectedNode}
                   selectedEdge={selectedEdge}
-                  onSelectNode={(node) => {
-                    setSelectedNode(node);
-                    setSelectedEdge(null);
-                  }}
+                  onSelectNode={handleSelectNode}
+                  onHoverNode={setHoveredNodeId}
                   onSelectEdge={(edge) => {
                     setSelectedEdge(edge);
                     setSelectedNode(null);
@@ -677,10 +714,7 @@ function AstExplorerContent() {
                   data={graphData}
                   selectedNode={selectedNode}
                   selectedEdge={selectedEdge}
-                  onSelectNode={(node) => {
-                    setSelectedNode(node);
-                    setSelectedEdge(null);
-                  }}
+                  onSelectNode={handleSelectNode}
                   onSelectEdge={(edge) => {
                     setSelectedEdge(edge);
                     setSelectedNode(null);
@@ -720,7 +754,7 @@ function AstExplorerContent() {
                   nodes={graphData.nodes}
                   projectId={currentProjectId}
                   onClose={() => setSelectedNode(null)}
-                  onSelectNode={setSelectedNode}
+                  onSelectNode={handleSelectNode}
                   graphScope={graphScope}
                   analysisMode={analysisMode}
                   onTriggerAction={handleTriggerAction}
@@ -741,6 +775,24 @@ function AstExplorerContent() {
             </>
           )}
         </main>
+        </div>
+
+        {/* Bottom Interactive Code Viewer Panel */}
+        <CodeViewer
+          isOpen={isCodeViewerOpen}
+          onToggle={() => setIsCodeViewerOpen(!isCodeViewerOpen)}
+          selectedNode={selectedNode}
+          hoveredNodeId={hoveredNodeId}
+          graphNodes={graphData?.nodes || []}
+          graphEdges={graphData?.links || []}
+          projectId={currentProjectId}
+          selectedRepo={selectedRepo}
+          graphScope={graphScope}
+          analysisMode={analysisMode}
+          highlightedNodeIds={highlightedNodeIds}
+          onSelectNode={handleSelectNode}
+          onHoverNode={setHoveredNodeId}
+        />
       </div>
     </div>
   );

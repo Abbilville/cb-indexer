@@ -346,4 +346,28 @@ export class ApiService {
       }),
     });
   }
+
+  public static async getNodesByLocation(params: {
+    repo: string;
+    project?: string;
+    file: string;
+    line?: number;
+  }): Promise<{ file_path: string; line: number; nodes: Array<{
+    id: string | number;
+    label: string;
+    name: string;
+    qualified_name: string;
+    file_path: string;
+    start_line: number;
+    end_line: number;
+    start_column?: number;
+    end_column?: number;
+    project: string;
+    properties?: Record<string, unknown>;
+  }> }> {
+    const searchParams = new URLSearchParams({ repo: params.repo, file: params.file });
+    if (params.project) searchParams.set('project', params.project);
+    if (params.line !== undefined) searchParams.set('line', params.line.toString());
+    return this.request(`/api/cpg/nodes-by-location?${searchParams.toString()}`);
+  }
 }

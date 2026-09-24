@@ -1448,6 +1448,74 @@ if ($p) { [Console]::Out.Write($p) }
 		}
 	})
 
+	// 11.7. GET /api/cpg/nodes-by-location (Find CPG nodes at a file location)
+	mux.HandleFunc("/api/cpg/nodes-by-location", func(w http.ResponseWriter, r *http.Request) {
+		if !checkAuth(r, authToken) {
+			writeError(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		repo := r.URL.Query().Get("repo")
+		projectParam := r.URL.Query().Get("project")
+		filePath := r.URL.Query().Get("file")
+		lineStr := r.URL.Query().Get("line")
+
+		if filePath == "" {
+			writeError(w, http.StatusBadRequest, "Missing 'file' parameter")
+			return
+		}
+
+		line := 0
+		if lineStr != "" {
+			if l, err := strconv.Atoi(lineStr); err == nil && l > 0 {
+				line = l
+			}
+		}
+
+		// Resolve CPG database
+		if repo == "" {
+			repo = projectParam
+		}
+		var dbPath string
+		if repo != "" {
+			dbPath, _ = cpg.FindCPGDB(repo)
+		}
+		lookupProject := projectParam
+		if lookupProject == "" {
+			lookupProject = repo
+		}
+		if dbPath == "" && lookupProject != "" {
+			if reg, regErr := registry.LoadRegistry(lookupProject); regErr == nil {
+				for _, r := range reg.Repos {
+					if p, pErr := cpg.FindCPGDB(r.Name); pErr == nil {
+						dbPath = p
+						break
+					}
+				}
+			}
+		}
+
+		if dbPath == "" {
+			writeJSON(w, http.StatusOK, map[string]any{
+				"file_path": filePath,
+				"line":      line,
+				"nodes":     []any{},
+			})
+			return
+		}
+
+		nodes, err := cpg.GetCPGNodesByLocation(dbPath, filePath, line)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "Failed to query nodes: "+err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{
+			"file_path": filePath,
+			"line":      line,
+			"nodes":     nodes,
+		})
+	})
+
 	// 12. GET /api/ai/credentials (Detect active AI harness / environment credentials)
 	mux.HandleFunc("/api/ai/credentials", func(w http.ResponseWriter, r *http.Request) {
 		if !checkAuth(r, authToken) {

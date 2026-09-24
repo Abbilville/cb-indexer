@@ -1,6 +1,7 @@
 package cpg
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -1177,4 +1178,78 @@ func GetCPGNeighborhood(dbPath string, nodeID int64, depth int, includeInbound, 
 		Nodes:         nodesList,
 		Links:         linksList,
 	}, nil
+}
+
+// GetCPGNodesByLocation finds all CPG nodes at a specific file path and optional line range.
+func GetCPGNodesByLocation(dbPath string, filePath string, line int) ([]map[string]any, error) {
+	db, err := OpenCPGDB(dbPath, true)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	query := `SELECT id, project, label, name, qualified_name, file_path,
+		start_line, end_line, properties
+		FROM nodes WHERE file_path = ?`
+	args := []any{filePath}
+
+	if line > 0 {
+		query += ` AND start_line <= ? AND (end_line >= ? OR end_line = 0 OR start_line = ?)`
+		args = append(args, line, line, line)
+	}
+	query += ` ORDER BY start_line, label, name`
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []map[string]any
+	for rows.Next() {
+		var id int64
+		var project, label, name, qname, fp string
+		var startLine, endLine int
+		var propsStr sql.NullString
+		if err := rows.Scan(&id, &project, &label, &name, &qname, &fp,
+			&startLine, &endLine, &propsStr); err != nil {
+			continue
+		}
+
+		node := map[string]any{
+			"id":             id,
+			"label":          label,
+			"name":           name,
+			"qualified_name": qname,
+			"file_path":      fp,
+			"start_line":     startLine,
+			"end_line":       endLine,
+			"project":        project,
+		}
+
+		if propsStr.Valid && propsStr.String != "" {
+			var props map[string]any
+			if err := json.Unmarshal([]byte(propsStr.String), &props); err == nil {
+				if col, ok := props["column"]; ok {
+					node["start_column"] = col
+				}
+				if ecol, ok := props["end_column"]; ok {
+					node["end_column"] = ecol
+				}
+				node["properties"] = props
+			}
+		}
+
+		results = append(results, node)
+	}
+
+	if results == nil {
+		results = []map[string]any{}
+	}
+	return results, nil
+}
+
+// GetCPGFileNodes returns all CPG nodes for a given file path.
+func GetCPGFileNodes(dbPath string, filePath string) ([]map[string]any, error) {
+	return GetCPGNodesByLocation(dbPath, filePath, 0)
 }

@@ -475,7 +475,7 @@ export function NodeInspector({
                 Impact Analysis
               </span>
               <span className="text-[10px] font-mono text-purple-400 font-bold">
-                {impactResult.direct_count + impactResult.indirect_count} dependents
+                {(impactResult.direct_count || 0) + (impactResult.indirect_count || 0)} dependents
               </span>
             </div>
             <div className="grid grid-cols-3 gap-1.5 text-center text-[10px] font-mono">
@@ -492,11 +492,11 @@ export function NodeInspector({
                 <span className="font-bold text-cyan-300 text-xs">{impactResult.affected_file_count}</span>
               </div>
             </div>
-            {impactResult.affected_files.length > 0 && (
+            {(impactResult.affected_files || []).length > 0 && (
               <div className="space-y-1">
                 <span className="text-[9px] text-gray-400 font-semibold uppercase block">Affected Files</span>
                 <div className="max-h-24 overflow-y-auto space-y-0.5 text-[10px] font-mono text-gray-300">
-                  {impactResult.affected_files.map((f) => (
+                  {(impactResult.affected_files || []).map((f) => (
                     <div key={f} className="truncate px-1.5 py-0.5 rounded bg-black/40">
                       {f}
                     </div>
@@ -516,11 +516,11 @@ export function NodeInspector({
                 Call Flow ({callFlowResult.direction})
               </span>
               <span className="text-[10px] font-mono text-cyan-400 font-bold">
-                {callFlowResult.nodes.length} methods
+                {(callFlowResult.nodes || []).length} methods
               </span>
             </div>
             <div className="max-h-32 overflow-y-auto space-y-1">
-              {callFlowResult.nodes.map((n, idx) => (
+              {(callFlowResult.nodes || []).map((n, idx) => (
                 <div
                   key={`cf-${n.id}-${idx}`}
                   onClick={() => onSelectNode(n)}
@@ -543,21 +543,21 @@ export function NodeInspector({
                 {flowResult.flow_type || 'Flow Path'}
               </span>
               <span className="text-[10px] font-mono text-pink-400 font-bold">
-                {flowResult.steps.length} steps
+                {(flowResult.steps || []).length} steps
               </span>
             </div>
             <div className="space-y-1 text-[10px] font-mono">
               <div className="p-1.5 rounded-lg bg-black/50 border border-white/5 flex items-center justify-between">
                 <span className="text-gray-400">Source:</span>
-                <span className="text-pink-300 truncate max-w-[180px]">{flowResult.source.name}</span>
+                <span className="text-pink-300 truncate max-w-[180px]">{flowResult.source?.name || '—'}</span>
               </div>
               <div className="p-1.5 rounded-lg bg-black/50 border border-white/5 flex items-center justify-between">
                 <span className="text-gray-400">Sink:</span>
-                <span className="text-pink-300 truncate max-w-[180px]">{flowResult.sink.name}</span>
+                <span className="text-pink-300 truncate max-w-[180px]">{flowResult.sink?.name || '—'}</span>
               </div>
             </div>
             <div className="max-h-36 overflow-y-auto space-y-1 pt-1">
-              {flowResult.steps.map((step) => (
+              {(flowResult.steps || []).map((step) => (
                 <div
                   key={`step-${step.step_index}-${step.node.id}`}
                   onClick={() => onSelectNode(step.node)}
@@ -583,12 +583,12 @@ export function NodeInspector({
                 Path Result
               </span>
               <span className={`text-[10px] font-mono font-bold ${pathResult.found ? 'text-emerald-400' : 'text-amber-400'}`}>
-                {pathResult.found ? `${pathResult.nodes.length} nodes` : 'No path found'}
+                {pathResult.found ? `${(pathResult.nodes || []).length} nodes` : 'No path found'}
               </span>
             </div>
             {pathResult.found && (
               <div className="max-h-36 overflow-y-auto space-y-1">
-                {pathResult.nodes.map((n, idx) => (
+                {(pathResult.nodes || []).map((n, idx) => (
                   <div
                     key={`p-${n.id}-${idx}`}
                     onClick={() => onSelectNode(n)}
