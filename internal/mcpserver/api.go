@@ -74,6 +74,27 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 	// 0. GET /api/events (Server-Sent Events stream for real-time progress)
 	mux.HandleFunc("/api/events", HandleSSE)
 
+	// 0.5. GET & POST /api/auth/verify (Validates token against server auth config)
+	mux.HandleFunc("/api/auth/verify", func(w http.ResponseWriter, r *http.Request) {
+		authRequired := authToken != ""
+		authenticated := checkAuth(r, authToken)
+		if authRequired && !authenticated {
+			writeJSON(w, http.StatusUnauthorized, map[string]any{
+				"status":        "unauthorized",
+				"auth_required": true,
+				"authenticated": false,
+				"message":       "Invalid or missing API auth token",
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":        "ok",
+			"auth_required": authRequired,
+			"authenticated": authenticated,
+			"message":       "Authenticated",
+		})
+	})
+
 	// 1. GET /api/projects
 	mux.HandleFunc("/api/projects", func(w http.ResponseWriter, r *http.Request) {
 		if !checkAuth(r, authToken) {
@@ -181,6 +202,7 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 		var req struct {
 			Project     string `json:"project"`
 			RepoName    string `json:"repo_name"`
+			Repo        string `json:"repo"`
 			Mode        string `json:"mode"`
 			Pull        bool   `json:"pull"`
 			Persistence bool   `json:"persistence"`
@@ -191,6 +213,9 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 			return
 		}
 
+		if req.RepoName == "" {
+			req.RepoName = req.Repo
+		}
 		indexingMutex.Lock()
 		if isIndexing {
 			indexingMutex.Unlock()
@@ -410,22 +435,27 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 
 		var req struct {
 			WorkspacePath string `json:"workspace_path"`
+			Path          string `json:"path"`
 			ProjectID     string `json:"project_id"`
 			OutputFile    string `json:"output_file"`
 		}
 
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err.Error() != "EOF" {
 			writeError(w, http.StatusBadRequest, "Invalid JSON body: "+err.Error())
 			return
 		}
 
+		if req.WorkspacePath == "" {
+			req.WorkspacePath = req.Path
+		}
+		req.WorkspacePath = strings.Trim(strings.TrimSpace(req.WorkspacePath), "\"'")
 		if req.WorkspacePath == "" {
 			req.WorkspacePath = "."
 		}
 
 		reg, err := scanner.ScanWorkspace(req.WorkspacePath, req.ProjectID)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "Scan failed: "+err.Error())
+			writeError(w, http.StatusBadRequest, "Scan failed: "+err.Error())
 			return
 		}
 
@@ -436,17 +466,27 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 
 		saved, err := registry.SaveRegistry(reg, outPath)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "Failed to save registry: "+err.Error())
-			return
+			// Fallback: If target directory is read-only or inaccessible, save to user config directory
+			fallbackDir := filepath.Join(registry.GetUserConfigDir(), "projects")
+			_ = os.MkdirAll(fallbackDir, 0755)
+			fallbackPath := filepath.Join(fallbackDir, reg.ProjectID+".yaml")
+			savedFallback, fbErr := registry.SaveRegistry(reg, fallbackPath)
+			if fbErr != nil {
+				writeError(w, http.StatusInternalServerError, "Failed to save registry: "+err.Error())
+				return
+			}
+			saved = savedFallback
 		}
 
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status":        "success",
 			"registry_path": saved,
 			"project_id":    reg.ProjectID,
+			"total_repos":   len(reg.Repos),
 			"repos_count":   len(reg.Repos),
 			"repos":         reg.Repos,
 			"relationships": reg.Relationships,
+			"message":       fmt.Sprintf("Scan complete: found %d repositories", len(reg.Repos)),
 		})
 	})
 
@@ -463,12 +503,20 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 
 		var req struct {
 			ProjectID   string `json:"project_id"`
+			Project     string `json:"project"`
 			PurgeGraphs bool   `json:"purge_graphs"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		if req.ProjectID == "" {
+			req.ProjectID = req.Project
+		}
+		if req.ProjectID == "" {
+			req.ProjectID = r.URL.Query().Get("project_id")
+		}
+		if req.ProjectID == "" {
 			req.ProjectID = r.URL.Query().Get("project")
 		}
+		req.ProjectID = strings.TrimSpace(req.ProjectID)
 
 		if req.ProjectID == "" {
 			writeError(w, http.StatusBadRequest, "project_id is required")
@@ -488,9 +536,18 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 			} else {
 				_ = cbmwrite.DeleteIndexedGraph(ctx, pID)
 			}
+			// Remove manifest file to prevent ghost rediscovery in active workspace
+			if reg != nil && reg.SourcePath != "" {
+				_ = os.Remove(reg.SourcePath)
+			}
 		}
 
 		unregistered := registry.UnregisterProjectFromCatalog(pID)
+		if req.ProjectID != pID {
+			if registry.UnregisterProjectFromCatalog(req.ProjectID) {
+				unregistered = true
+			}
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status":       "success",
 			"project_id":   pID,
@@ -498,13 +555,13 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 		})
 	})
 
-	// 7. GET /api/browse-dirs?path=... (Directory listing fallback)
+	// 7. GET /api/browse-dirs?path=... (Directory listing for in-app IDE folder explorer)
 	mux.HandleFunc("/api/browse-dirs", func(w http.ResponseWriter, r *http.Request) {
 		if !checkAuth(r, authToken) {
 			writeError(w, http.StatusUnauthorized, "Unauthorized")
 			return
 		}
-		targetPath := r.URL.Query().Get("path")
+		targetPath := strings.Trim(strings.TrimSpace(r.URL.Query().Get("path")), "\"'")
 		if targetPath == "" {
 			targetPath = "."
 		}
@@ -513,21 +570,46 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		abs = filepath.Clean(abs)
+
 		entries, err := os.ReadDir(abs)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeError(w, http.StatusBadRequest, "Cannot read directory: "+err.Error())
 			return
 		}
+
+		showHidden := r.URL.Query().Get("show_hidden") == "true"
 		var dirs []string
 		for _, e := range entries {
-			if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
-				dirs = append(dirs, e.Name())
+			if e.IsDir() {
+				name := e.Name()
+				if !showHidden && strings.HasPrefix(name, ".") {
+					continue
+				}
+				dirs = append(dirs, name)
 			}
 		}
+
+		parent := filepath.Dir(abs)
+		if parent == abs {
+			parent = ""
+		}
+
+		var drives []string
+		if runtime.GOOS == "windows" {
+			for _, letter := range "ABCDEFGHIJKLMNOPQRSTUVWXYZ" {
+				dPath := string(letter) + ":\\"
+				if _, err := os.Stat(dPath); err == nil {
+					drives = append(drives, dPath)
+				}
+			}
+		}
+
 		writeJSON(w, http.StatusOK, map[string]any{
 			"current": abs,
-			"parent":  filepath.Dir(abs),
+			"parent":  parent,
 			"dirs":    dirs,
+			"drives":  drives,
 		})
 	})
 
@@ -542,18 +624,132 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 			return
 		}
 
+		var req struct {
+			Path string `json:"path"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		initPath := req.Path
+		if initPath == "" {
+			initPath = r.URL.Query().Get("path")
+		}
+		initPath = strings.Trim(strings.TrimSpace(initPath), "\"'")
+
 		var selectedPath string
 		var err error
 
 		switch runtime.GOOS {
 		case "windows":
-			psCmd := `Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.FolderBrowserDialog; $f.Description = 'Select Project Folder'; $f.ShowNewFolderButton = $true; if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($f.SelectedPath) }`
-			cmd := exec.Command("powershell", "-NoProfile", "-STA", "-Command", psCmd)
+			psScript := `$code = @"
+using System;
+using System.IO;
+using System.Runtime.InteropServices;
+
+public class NativeFolderBrowser {
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern int SHCreateItemFromParsingName(
+        [MarshalAs(UnmanagedType.LPWStr)] string pszPath,
+        IntPtr pbc,
+        ref Guid riid,
+        [MarshalAs(UnmanagedType.Interface)] out object ppv);
+
+    [ComImport]
+    [Guid("DC1C5A9C-E88A-4dde-A5A1-60F82A20AEF7")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IFileDialog {
+        [PreserveSig] int Show(IntPtr parent);
+        void SetFileTypes();
+        void SetFileTypeIndex();
+        void GetFileTypeIndex();
+        void Advise();
+        void Unadvise();
+        void SetOptions(uint fos);
+        void GetOptions(out uint fos);
+        void SetDefaultFolder(object psi);
+        void SetFolder(object psi);
+        void GetFolder(out object ppsi);
+        void GetCurrentSelection(out object ppsi);
+        void SetFileName([MarshalAs(UnmanagedType.LPWStr)] string pszName);
+        void GetFileName([MarshalAs(UnmanagedType.LPWStr)] out string pszName);
+        void SetTitle([MarshalAs(UnmanagedType.LPWStr)] string pszTitle);
+        void SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string pszText);
+        void SetFileNameLabel([MarshalAs(UnmanagedType.LPWStr)] string pszLabel);
+        void GetResult(out IShellItem ppsi);
+    }
+
+    [ComImport]
+    [Guid("42f85136-db7e-439c-85f1-e4075d135fc8")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IFileOpenDialog : IFileDialog {}
+
+    [ComImport]
+    [Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    public interface IShellItem {
+        void BindToHandler();
+        void GetParent();
+        void GetDisplayName(uint sigdnName, [MarshalAs(UnmanagedType.LPWStr)] out string ppszName);
+        void GetAttributes();
+        void Compare();
+    }
+
+    [ComImport]
+    [Guid("DC1C5A9C-E88A-4dde-A5A1-60F82A20AEF7")]
+    [CoClass(typeof(FileOpenDialogRCW))]
+    private interface NativeFileOpenDialog : IFileOpenDialog {}
+
+    [ComImport]
+    [Guid("DC1C5A9C-E88A-4dde-A5A1-60F82A20AEF7")]
+    [ClassInterface(ClassInterfaceType.None)]
+    [TypeLibType(TypeLibTypeFlags.FCanCreate)]
+    private class FileOpenDialogRCW {}
+
+    public static string PickFolder(string initialFolder, string title) {
+        var dialog = (IFileOpenDialog)new FileOpenDialogRCW();
+        uint options;
+        dialog.GetOptions(out options);
+        dialog.SetOptions(options | 0x20 | 0x40);
+        if (!string.IsNullOrEmpty(title)) {
+            dialog.SetTitle(title);
+        }
+        if (!string.IsNullOrEmpty(initialFolder) && Directory.Exists(initialFolder)) {
+            Guid iid = new Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE");
+            object folderItem;
+            if (SHCreateItemFromParsingName(initialFolder, IntPtr.Zero, ref iid, out folderItem) == 0) {
+                dialog.SetFolder(folderItem);
+            }
+        }
+        int hr = dialog.Show(IntPtr.Zero);
+        if (hr == 0) {
+            IShellItem item;
+            dialog.GetResult(out item);
+            string path;
+            item.GetDisplayName(0x80058000 /* SIGDN_FILESYSPATH */, out path);
+            return path;
+        }
+        return null;
+    }
+}
+"@
+Add-Type -TypeDefinition $code -Language CSharp
+$p = [NativeFolderBrowser]::PickFolder($env:INIT_PATH, 'Select Project Folder')
+if ($p) { [Console]::Out.Write($p) }
+`
+			cmd := exec.Command("powershell", "-NoProfile", "-STA", "-Command", psScript)
+			if initPath != "" {
+				cmd.Env = append(os.Environ(), "INIT_PATH="+initPath)
+			}
 			out, runErr := cmd.Output()
 			if runErr == nil {
 				selectedPath = strings.TrimSpace(string(out))
 			} else {
-				err = runErr
+				// Fallback to basic folder dialog if COM RCW throws an unexpected error
+				fallbackCmd := `Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.FolderBrowserDialog; $f.Description = 'Select Project Folder'; if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($f.SelectedPath) }`
+				fbOut, fbErr := exec.Command("powershell", "-NoProfile", "-STA", "-Command", fallbackCmd).Output()
+				if fbErr == nil {
+					selectedPath = strings.TrimSpace(string(fbOut))
+				} else {
+					err = runErr
+				}
 			}
 		case "darwin":
 			cmd := exec.Command("osascript", "-e", `POSIX path of (choose folder with prompt "Select Project Folder")`)
@@ -972,8 +1168,22 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 				}
 			case "openai":
 				apiKey = os.Getenv("OPENAI_API_KEY")
-			case "custom":
+			case "groq":
+				apiKey = os.Getenv("GROQ_API_KEY")
+			case "deepseek":
 				apiKey = os.Getenv("DEEPSEEK_API_KEY")
+			case "openrouter":
+				apiKey = os.Getenv("OPENROUTER_API_KEY")
+			case "huggingface":
+				apiKey = os.Getenv("HUGGINGFACE_API_KEY")
+				if apiKey == "" {
+					apiKey = os.Getenv("HF_TOKEN")
+				}
+			case "custom":
+				apiKey = os.Getenv("CUSTOM_AI_API_KEY")
+				if apiKey == "" {
+					apiKey = os.Getenv("DEEPSEEK_API_KEY")
+				}
 			}
 		}
 
@@ -1119,12 +1329,30 @@ func RegisterRESTEndpoints(mux *http.ServeMux, authToken string) {
 			return
 
 		default:
-			// OpenAI or Custom OpenAI-compatible
-			baseUrl := req.BaseURL
+			// OpenAI or OpenAI-compatible (Groq, DeepSeek, OpenRouter, Hugging Face, Ollama, Custom)
+			baseUrl := strings.TrimRight(strings.TrimSpace(req.BaseURL), "/")
 			if baseUrl == "" {
-				baseUrl = "https://api.openai.com/v1"
+				switch req.Provider {
+				case "openai":
+					baseUrl = "https://api.openai.com/v1"
+				case "groq":
+					baseUrl = "https://api.groq.com/openai/v1"
+				case "deepseek":
+					baseUrl = "https://api.deepseek.com/v1"
+				case "openrouter":
+					baseUrl = "https://openrouter.ai/api/v1"
+				case "huggingface":
+					baseUrl = "https://router.huggingface.co/v1"
+				case "ollama":
+					baseUrl = "http://localhost:11434/v1"
+				default:
+					baseUrl = "https://api.openai.com/v1"
+				}
 			}
-			url := fmt.Sprintf("%s/chat/completions", strings.TrimRight(baseUrl, "/"))
+			if req.Provider == "huggingface" && strings.Contains(baseUrl, "hf-inference") {
+				baseUrl = "https://router.huggingface.co/v1"
+			}
+			url := fmt.Sprintf("%s/chat/completions", baseUrl)
 
 			var openAiMessages []map[string]string
 			if req.SystemPrompt != "" {

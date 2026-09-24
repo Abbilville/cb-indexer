@@ -25,20 +25,52 @@ import (
 // if the variable is not already defined in the OS environment.
 
 func getAuthTokenEnv() string {
-	if t := os.Getenv("CB_INDEXER_AUTH_TOKEN"); t != "" {
+	if t := strings.TrimSpace(os.Getenv("CB_INDEXER_AUTH_TOKEN")); t != "" {
 		return t
 	}
-	return os.Getenv("OSS_INDEXER_AUTH_TOKEN")
+	return strings.TrimSpace(os.Getenv("OSS_INDEXER_AUTH_TOKEN"))
 }
 
 func loadDotEnv() {
-	candidates := []string{".env"}
+	candidates := []string{
+		".env",
+		"cb-indexer/.env",
+		"../.env",
+		"../cb-indexer/.env",
+	}
 	if exe, err := os.Executable(); err == nil {
-		candidates = append(candidates, filepath.Join(filepath.Dir(exe), ".env"))
+		dir := filepath.Dir(exe)
+		candidates = append(candidates,
+			filepath.Join(dir, ".env"),
+			filepath.Join(dir, "..", ".env"),
+			filepath.Join(dir, "cb-indexer", ".env"),
+		)
 	}
 
+	if cwd, err := os.Getwd(); err == nil {
+		curr := cwd
+		for range 4 {
+			candidates = append(candidates,
+				filepath.Join(curr, ".env"),
+				filepath.Join(curr, "cb-indexer", ".env"),
+			)
+			parent := filepath.Dir(curr)
+			if parent == curr {
+				break
+			}
+			curr = parent
+		}
+	}
+
+	seen := make(map[string]bool)
 	for _, path := range candidates {
-		data, err := os.ReadFile(path)
+		abs, err := filepath.Abs(path)
+		if err != nil || seen[abs] {
+			continue
+		}
+		seen[abs] = true
+
+		data, err := os.ReadFile(abs)
 		if err != nil {
 			continue
 		}
@@ -55,6 +87,7 @@ func loadDotEnv() {
 				if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
 					val = val[1 : len(val)-1]
 				}
+				val = strings.TrimSpace(val)
 				if os.Getenv(key) == "" {
 					_ = os.Setenv(key, val)
 				}
