@@ -1184,6 +1184,16 @@ if ($p) { [Console]::Out.Write($p) }
 				if apiKey == "" {
 					apiKey = os.Getenv("DEEPSEEK_API_KEY")
 				}
+			case "9router":
+				apiKey = os.Getenv("NINEROUTER_API_KEY")
+				if apiKey == "" {
+					apiKey = os.Getenv("ROUTER_API_KEY")
+				}
+			case "omniroute":
+				apiKey = os.Getenv("OMNIROUTE_API_KEY")
+				if apiKey == "" {
+					apiKey = os.Getenv("ONEAPI_API_KEY")
+				}
 			}
 		}
 
@@ -1345,6 +1355,10 @@ if ($p) { [Console]::Out.Write($p) }
 					baseUrl = "https://router.huggingface.co/v1"
 				case "ollama":
 					baseUrl = "http://localhost:11434/v1"
+				case "9router":
+					baseUrl = "http://localhost:2080/v1"
+				case "omniroute":
+					baseUrl = "http://localhost:8000/v1"
 				default:
 					baseUrl = "https://api.openai.com/v1"
 				}

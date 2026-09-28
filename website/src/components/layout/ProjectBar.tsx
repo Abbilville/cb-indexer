@@ -3,6 +3,7 @@
 import React from 'react';
 import { ProjectCatalogItem } from '../../types/project';
 import { FolderGit2, Plus, Trash2, ExternalLink } from 'lucide-react';
+import { Select } from '../ui/Select';
 
 interface ProjectBarProps {
   projects: ProjectCatalogItem[];
@@ -28,30 +29,23 @@ export function ProjectBar({
         <label htmlFor="project-picker" className="text-xs font-semibold uppercase tracking-wider text-gray-400">
           Project:
         </label>
-        <div className="relative min-w-[220px]">
-          <select
-            id="project-picker"
+        <div className="min-w-[240px]">
+          <Select
             value={currentProjectId}
-            onChange={(e) => onSelectProject(e.target.value)}
-            className="w-full appearance-none pl-9 pr-8 py-2 bg-black/50 hover:bg-black/70 border border-white/10 rounded-xl text-xs font-medium text-gray-200 focus:outline-none focus:border-blue-500 transition-colors cursor-pointer"
-          >
-            {projects.length === 0 ? (
-              <option value="">(No Registered Projects)</option>
-            ) : (
-              projects.map((p) => {
-                const id = p.project_id || p.registry_path || '';
-                return (
-                  <option key={id} value={id}>
-                    {p.name || p.project_id} ({p.total_repos ?? 0} repos)
-                  </option>
-                );
-              })
-            )}
-          </select>
-          <FolderGit2 className="w-4 h-4 text-blue-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-[10px] pointer-events-none">
-            ▼
-          </span>
+            onChange={onSelectProject}
+            options={projects.map((p) => {
+              const id = p.project_id || p.registry_path || '';
+              return {
+                value: id,
+                label: p.name || p.project_id,
+                badge: `${p.total_repos ?? 0} repos`,
+              };
+            })}
+            placeholder="(No Registered Projects)"
+            leftIcon={<FolderGit2 className="w-4 h-4 text-blue-400" />}
+            searchable={projects.length > 5}
+            searchPlaceholder="Search projects..."
+          />
         </div>
 
         {gitUrl && (

@@ -8,6 +8,7 @@ import {
 } from '../../types/ai';
 import { AiService } from '../../services/ai';
 import { useToast } from '../ui/Toast';
+import { Select } from '../ui/Select';
 import {
   X,
   KeyRound,
@@ -110,14 +111,16 @@ export function AiSettingsModal({ isOpen, onClose, onSave }: AiSettingsModalProp
                       <span className="font-bold text-xs truncate">{preset.name}</span>
                       <span
                         className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono shrink-0 border ${
-                          preset.category === 'Open Source'
-                            ? 'bg-purple-500/10 border-purple-500/20 text-purple-300'
-                            : preset.category === 'Local'
-                            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
-                            : preset.category === 'Aggregator'
-                            ? 'bg-amber-500/10 border-amber-500/20 text-amber-300'
-                            : 'bg-blue-500/10 border-blue-500/20 text-blue-300'
-                        }`}
+                        preset.category === 'Open Source'
+                          ? 'bg-purple-500/10 border-purple-500/20 text-purple-300'
+                          : preset.category === 'Local'
+                          ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+                          : preset.category === 'Aggregator'
+                          ? 'bg-amber-500/10 border-amber-500/20 text-amber-300'
+                          : preset.category === 'Gateway'
+                          ? 'bg-cyan-500/10 border-cyan-500/20 text-cyan-300'
+                          : 'bg-blue-500/10 border-blue-500/20 text-blue-300'
+                      }`}
                       >
                         {preset.category}
                       </span>
@@ -186,17 +189,19 @@ export function AiSettingsModal({ isOpen, onClose, onSave }: AiSettingsModalProp
               <span>3. Model Selection ({activePreset.name})</span>
             </label>
 
-            <select
+            <Select
               value={currentConfig.model}
-              onChange={(e) => setCurrentConfig((prev) => ({ ...prev, model: e.target.value }))}
-              className="w-full px-3.5 py-2.5 bg-black/50 border border-white/10 rounded-xl text-sm text-gray-100 font-mono focus:outline-none focus:border-blue-500 cursor-pointer"
-            >
-              {activePreset.models.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
+              onChange={(val) => setCurrentConfig((prev) => ({ ...prev, model: val }))}
+              options={activePreset.models.map((m) => ({
+                value: m,
+                label: m,
+                badge: m === activePreset.defaultModel ? 'Default' : undefined,
+              }))}
+              className="w-full"
+              size="lg"
+              searchable={activePreset.models.length > 4}
+              searchPlaceholder={`Search ${activePreset.name} models...`}
+            />
 
             <div className="pt-1">
               <input
@@ -212,7 +217,9 @@ export function AiSettingsModal({ isOpen, onClose, onSave }: AiSettingsModalProp
           {/* 4. Custom Endpoint URL (for Ollama, Custom, or Proxies) */}
           {(currentConfig.provider === 'ollama' ||
             currentConfig.provider === 'custom' ||
-            currentConfig.baseUrl) && (
+            currentConfig.provider === '9router' ||
+            currentConfig.provider === 'omniroute' ||
+            Boolean(currentConfig.baseUrl)) && (
             <div className="space-y-1.5 pt-1">
               <label className="text-xs font-semibold uppercase tracking-wider text-gray-300 flex items-center gap-1.5">
                 <Globe className="w-3.5 h-3.5 text-cyan-400" />

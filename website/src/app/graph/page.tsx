@@ -12,6 +12,7 @@ import { EdgeInspector } from '../../components/graph/EdgeInspector';
 import { RepoDetail, ProjectCatalogItem } from '../../types/project';
 import { ApiService } from '../../services/api';
 import { GraphPayload, GraphNode, GraphEdge } from '../../types/graph';
+import { Select } from '../../components/ui/Select';
 import { ArrowLeft, RefreshCw, Loader2, Database } from 'lucide-react';
 
 const Graph2DView = dynamic(
@@ -242,27 +243,25 @@ function AstExplorerContent() {
           {/* Active project & graph stats */}
           <div className="hidden sm:flex items-center gap-2 text-xs font-mono">
             {projects.length > 1 ? (
-              <div className="relative">
-                <select
-                  value={currentProjectId}
-                  onChange={(e) => handleSwitchProject(e.target.value)}
-                  className="appearance-none pl-7 pr-7 py-1 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-300 font-mono text-xs focus:outline-none focus:border-blue-400 cursor-pointer transition-all"
-                  title="Switch Active Project"
-                >
-                  {projects.map((p) => {
-                    const pId = p.project_id || p.registry_path || '';
-                    return (
-                      <option key={pId} value={pId} className="bg-gray-900 text-white font-mono">
-                        {p.name || pId} ({p.total_repos ?? 0} repos)
-                      </option>
-                    );
-                  })}
-                </select>
-                <Database className="w-3 h-3 text-blue-400 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-blue-400 text-[9px] pointer-events-none">
-                  ▼
-                </span>
-              </div>
+              <Select
+                value={currentProjectId}
+                onChange={handleSwitchProject}
+                options={projects.map((p) => {
+                  const pId = p.project_id || p.registry_path || '';
+                  return {
+                    value: pId,
+                    label: p.name || pId,
+                    badge: `${p.total_repos ?? 0} repos`,
+                  };
+                })}
+                size="sm"
+                leftIcon={<Database className="w-3 h-3 text-blue-400" />}
+                triggerClassName="bg-blue-500/10 hover:bg-blue-500/20 border-blue-500/30 text-blue-300 min-w-[170px]"
+                title="Switch Active Project"
+                align="right"
+                searchable={projects.length > 5}
+                searchPlaceholder="Search projects..."
+              />
             ) : (
               <span className="px-2.5 py-1 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-300 flex items-center gap-1.5">
                 <Database className="w-3 h-3 text-blue-400" />
