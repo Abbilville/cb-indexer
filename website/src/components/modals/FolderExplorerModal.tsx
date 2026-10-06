@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { ApiService } from '../../services/api';
 import { useToast } from '../ui/Toast';
+import { Select } from '../ui/Select';
 
 interface FolderExplorerModalProps {
   isOpen: boolean;
@@ -157,19 +158,15 @@ export function FolderExplorerModal({
 
             {/* Drive selector if available (Windows) */}
             {drives.length > 0 && (
-              <select
-                value={drives.find((d) => currentPath.toUpperCase().startsWith(d.toUpperCase())) || ''}
-                onChange={(e) => {
-                  if (e.target.value) fetchDirs(e.target.value);
+              <Select
+                value={drives.find((d) => currentPath.toUpperCase().startsWith(d.toUpperCase())) || drives[0]}
+                onChange={(drv) => {
+                  if (drv) fetchDirs(drv);
                 }}
-                className="px-2 py-1.5 bg-black/60 border border-white/10 rounded-lg text-xs text-gray-200 focus:outline-none focus:border-blue-500 shrink-0"
-              >
-                {drives.map((drv) => (
-                  <option key={drv} value={drv}>
-                    {drv}
-                  </option>
-                ))}
-              </select>
+                options={drives.map((drv) => ({ value: drv, label: drv }))}
+                size="sm"
+                triggerClassName="bg-black/60 border-white/10 text-xs shrink-0"
+              />
             )}
 
             {/* Path Breadcrumb / Input */}

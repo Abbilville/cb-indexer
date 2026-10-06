@@ -11,6 +11,7 @@ import { AiService } from '../../services/ai';
 import { useToast } from '../ui/Toast';
 import { AiSettingsModal } from '../modals/AiSettingsModal';
 import { MarkdownRenderer } from '../ui/MarkdownRenderer';
+import { Select } from '../ui/Select';
 import {
   Send,
   Settings,
@@ -156,6 +157,10 @@ export function AstAskTab({
                       ? 'bg-purple-500/10 border-purple-500/30 text-purple-300'
                       : currentPreset.category === 'Local'
                       ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                      : currentPreset.category === 'Gateway'
+                      ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300'
+                      : currentPreset.category === 'Aggregator'
+                      ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
                       : 'bg-blue-500/10 border-blue-500/30 text-blue-300'
                   }`}
                 >
@@ -187,6 +192,29 @@ export function AstAskTab({
               <Settings className="w-4 h-4" />
             </button>
           </div>
+        </div>
+        {/* Quick Model Selector Dropdown */}
+        <div className="mt-2">
+          <Select
+            value={config.model}
+            onChange={(newModel) => {
+              const updated = { ...config, model: newModel };
+              setConfig(updated);
+              AiService.saveConfig(updated);
+              showToast(`Switched to ${newModel}`, 'info');
+            }}
+            options={currentPreset.models.map((m) => ({
+              value: m,
+              label: m,
+              badge: m === currentPreset.defaultModel ? 'Default' : undefined,
+            }))}
+            size="sm"
+            searchable={currentPreset.models.length > 5}
+            searchPlaceholder="Search models..."
+            triggerClassName="bg-black/40 border-white/10 text-gray-300 hover:border-blue-500/40 text-[11px] py-1"
+            className="w-full"
+            title="Quickly switch model for this provider"
+          />
         </div>
       </div>
 

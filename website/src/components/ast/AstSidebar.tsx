@@ -5,6 +5,7 @@ import { GraphNode, GraphPayload } from '../../types/graph';
 import { RepoDetail } from '../../types/project';
 import { ProjectTreeView } from './ProjectTreeView';
 import { AstAskTab } from './AstAskTab';
+import { Select } from '../ui/Select';
 import { getNodeColor, getEdgeColor } from '../graph/utils';
 import {
   SlidersHorizontal,
@@ -138,23 +139,23 @@ export function AstSidebar({
               <Database className="w-3.5 h-3.5 text-purple-400" />
               Repository Knowledge Graph
             </label>
-            <div className="relative">
-              <select
-                value={selectedRepo}
-                onChange={(e) => onSelectRepo(e.target.value)}
-                className="w-full appearance-none pl-3 pr-8 py-1.5 bg-black/60 border border-purple-500/30 rounded-xl text-xs font-mono text-purple-200 focus:outline-none focus:border-purple-400 cursor-pointer truncate"
-              >
-                <option value="">(All Global Graphs)</option>
-                {repos.map((r) => (
-                  <option key={r.name} value={r.name}>
-                    {r.name} {r.is_indexed ? '✓' : '(unindexed)'}
-                  </option>
-                ))}
-              </select>
-              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-purple-400 text-[10px] pointer-events-none">
-                ▼
-              </span>
-            </div>
+            <Select
+              value={selectedRepo}
+              onChange={onSelectRepo}
+              options={[
+                { value: '', label: '(All Global Graphs)' },
+                ...repos.map((r) => ({
+                  value: r.name,
+                  label: r.name,
+                  badge: r.is_indexed ? 'Indexed' : 'Unindexed',
+                })),
+              ]}
+              triggerClassName="bg-black/60 border-purple-500/30 text-purple-200 hover:border-purple-400"
+              size="sm"
+              className="w-full"
+              searchable={repos.length > 5}
+              searchPlaceholder="Search repos..."
+            />
           </div>
 
           {/* Triple Tabs Bar */}

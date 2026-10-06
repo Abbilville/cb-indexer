@@ -7,6 +7,8 @@ export type AiProvider =
   | 'openrouter'
   | 'huggingface'
   | 'ollama'
+  | '9router'
+  | 'omniroute'
   | 'custom';
 
 export interface AiConfig {
@@ -31,7 +33,7 @@ export interface ChatMessage {
 export interface ProviderPreset {
   id: AiProvider;
   name: string;
-  category: 'Flagship' | 'Open Source' | 'Local' | 'Aggregator';
+  category: 'Flagship' | 'Open Source' | 'Local' | 'Aggregator' | 'Gateway';
   defaultModel: string;
   models: string[];
   placeholderKey: string;
@@ -179,5 +181,45 @@ export const PROVIDER_PRESETS: Record<AiProvider, ProviderPreset> = {
     defaultBaseUrl: 'http://localhost:8000/v1',
     requiresKey: false,
     description: 'Connect to any OpenAI-compatible server (vLLM, LM Studio, LocalAI, etc.).',
+  },
+  '9router': {
+    id: '9router',
+    name: '9router (AI Gateway)',
+    category: 'Gateway',
+    defaultModel: 'openai/gpt-4o',
+    models: [
+      'openai/gpt-4o',
+      'anthropic/claude-3-5-sonnet',
+      'deepseek/deepseek-chat',
+      'deepseek/deepseek-r1',
+      'meta-llama/llama-3.3-70b-instruct',
+      'google/gemini-2.0-flash',
+      'qwen/qwen-2.5-coder-32b-instruct',
+    ],
+    placeholderKey: '9r-... or Bearer token',
+    defaultBaseUrl: 'http://localhost:2080/v1',
+    apiKeyDocsUrl: 'https://9router.com',
+    requiresKey: true,
+    description: 'High-performance AI model gateway with multi-provider routing and fallback.',
+  },
+  omniroute: {
+    id: 'omniroute',
+    name: 'Omniroute Gateway',
+    category: 'Gateway',
+    defaultModel: 'claude-3-5-sonnet',
+    models: [
+      'claude-3-5-sonnet',
+      'gpt-4o',
+      'gpt-4o-mini',
+      'deepseek-chat',
+      'deepseek-r1',
+      'gemini-1.5-pro',
+      'qwen-2.5-72b',
+    ],
+    placeholderKey: 'sk-... or Omniroute API key',
+    defaultBaseUrl: 'http://localhost:8000/v1',
+    apiKeyDocsUrl: 'https://omniroute.ai',
+    requiresKey: true,
+    description: 'Universal model gateway unifying OpenAI, Claude, DeepSeek and Gemini routes.',
   },
 };

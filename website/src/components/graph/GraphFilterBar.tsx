@@ -5,6 +5,7 @@ import { ViewMode, GraphScope } from '../../types/graph';
 import { RepoDetail } from '../../types/project';
 import { Box, CircleDot, Network, Search, X, Layers, Code2 } from 'lucide-react';
 import { getNodeColor, getEdgeColor } from './utils';
+import { Select } from '../ui/Select';
 
 interface GraphFilterBarProps {
   viewMode: ViewMode;
@@ -74,23 +75,22 @@ export function GraphFilterBar({
 
           {/* If in AST scope: Repository Dropdown */}
           {scope === 'ast' && repos.length > 0 && (
-            <div className="relative">
-              <select
-                value={selectedRepo}
-                onChange={(e) => onSelectRepo(e.target.value)}
-                className="pl-3 pr-8 py-1.5 bg-black/60 border border-purple-500/30 rounded-xl text-xs font-mono text-purple-300 focus:outline-none focus:border-purple-400 cursor-pointer"
-              >
-                <option value="">(All Indexed Graphs)</option>
-                {repos.map((r) => (
-                  <option key={r.name} value={r.name}>
-                    {r.name} {r.is_indexed ? '✓' : '(unindexed)'}
-                  </option>
-                ))}
-              </select>
-              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-purple-400 text-[9px] pointer-events-none">
-                ▼
-              </span>
-            </div>
+            <Select
+              value={selectedRepo}
+              onChange={onSelectRepo}
+              options={[
+                { value: '', label: '(All Indexed Graphs)' },
+                ...repos.map((r) => ({
+                  value: r.name,
+                  label: r.name,
+                  badge: r.is_indexed ? 'Indexed' : 'Unindexed',
+                })),
+              ]}
+              size="sm"
+              triggerClassName="bg-black/60 border-purple-500/30 text-purple-300 hover:border-purple-400"
+              searchable={repos.length > 5}
+              searchPlaceholder="Search repos..."
+            />
           )}
         </div>
 
